@@ -11,3 +11,4 @@ wheels/
 Module_info
 .env
 chroma_db
+data
