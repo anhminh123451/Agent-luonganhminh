@@ -8,3 +8,6 @@ wheels/
 
 # Virtual environments
 .venv
+Module_info
+.env
+chroma_db
