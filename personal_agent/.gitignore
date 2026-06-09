@@ -12,3 +12,4 @@ Module_info
 .env
 chroma_db
 data
+logs/
