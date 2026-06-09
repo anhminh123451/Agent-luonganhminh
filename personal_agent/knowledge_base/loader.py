@@ -275,6 +275,45 @@ class CSVLoader(BaseFileLoader):
                 },
             )
 
+class MarkdownLoader(BaseFileLoader):
+    """Loader cho file Markdown (.md)."""
+
+    supported_extensions: ClassVar[list[str]] = [".md"]
+
+    def __init__(self, chunk_separator: str = "\n## ", id_prefix: str = "md"):
+        self.chunk_separator = chunk_separator
+        self.id_prefix = id_prefix
+
+    def load(self, file_path: Path) -> list[Document]:
+        file_path = Path(file_path)
+        self._validate_file_exists(file_path)
+
+        logger.info(f"Loading Markdown: {file_path.name}")
+
+        text = file_path.read_text(encoding="utf-8")
+
+        # Tách theo heading ## 
+        chunks = text.split(self.chunk_separator)
+        
+        documents = []
+        for idx, chunk in enumerate(chunks):
+            content = chunk.strip()
+            if not content:
+                continue
+
+            documents.append(Document(
+                doc_id=f"{self.id_prefix}_{idx:05d}",
+                content=content,
+                metadata={
+                    "source_file": file_path.name,
+                    "chunk_index": idx,
+                },
+            ))
+
+        logger.info(f"Loaded {len(documents)} documents from {file_path.name}")
+        return documents
+
+
 
 # ═══════════════════════════════════════════════════════════════════════
 # LOADER REGISTRY — Đăng ký và quản lý loader theo file extension
