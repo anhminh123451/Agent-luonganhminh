@@ -275,6 +275,10 @@ class CSVLoader(BaseFileLoader):
                 },
             )
 
+# ═══════════════════════════════════════════════════════════════════════
+# MD LOADER — Load file MD
+# ═══════════════════════════════════════════════════════════════════════
+
 class MarkdownLoader(BaseFileLoader):
     """Loader cho file Markdown (.md)."""
 
