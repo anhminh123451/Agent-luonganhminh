@@ -206,7 +206,11 @@ class CSVLoader(BaseFileLoader):
                         skipped += 1
                         continue
 
-                    doc_id = f"{self.id_prefix}_{idx:05d}"
+                    # Dùng content-hash thay vì sequential index
+                    # → tránh trùng ID khi add nhiều lần hoặc add thêm file mới
+                    hash_input = f"{file_path.name}::row_{idx}::{content}"
+                    content_hash = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
+                    doc_id = f"{self.id_prefix}_{content_hash}"
                     metadata = {
                         "source_file": file_path.name,
                         "row_index": idx,
@@ -305,8 +309,13 @@ class MarkdownLoader(BaseFileLoader):
             if not content:
                 continue
 
+            # Dùng content-hash thay vì sequential index
+            hash_input = f"{file_path.name}::chunk_{idx}::{content}"
+            content_hash = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
+            doc_id = f"{self.id_prefix}_{content_hash}"
+
             documents.append(Document(
-                doc_id=f"{self.id_prefix}_{idx:05d}",
+                doc_id=doc_id,
                 content=content,
                 metadata={
                     "source_file": file_path.name,
