@@ -532,6 +532,35 @@ class ChromaVectorStore(BaseVectorStore):
                 details={"error": str(e)},
             ) from e
 
+    def get_ids_by_source_file(self, source_file: str) -> list[str]:
+        """
+        Lấy danh sách document IDs thuộc về một source file cụ thể.
+
+        Dùng cho IncrementalIndexStrategy: khi file thay đổi hoặc bị xóa,
+        cần biết IDs nào cần xóa khỏi vector store.
+
+        Args:
+            source_file: Tên file nguồn (ví dụ: "BankFAQs.csv").
+
+        Returns:
+            Danh sách document IDs.
+        """
+        try:
+            if self._collection.count() == 0:
+                return []
+
+            results = self._collection.get(
+                where={"source_file": source_file},
+                include=[],  # Chỉ cần IDs, không cần documents/metadatas
+            )
+            return results.get("ids", [])
+
+        except Exception as e:
+            raise VectorStoreError(
+                f"Failed to get IDs for source file '{source_file}'",
+                details={"source_file": source_file, "error": str(e)},
+            ) from e
+
     def count_by_domain(self, domain: str) -> int:
         """
         Đếm số documents trong một domain cụ thể.
@@ -811,4 +840,12 @@ class VectorStore:
             return self._store.count_by_domain(domain)
         raise VectorStoreError(
             "count_by_domain() is not supported by the current backend",
+        )
+
+    def get_ids_by_source_file(self, source_file: str) -> list[str]:
+        """Lấy IDs của documents thuộc source file cụ thể."""
+        if isinstance(self._store, ChromaVectorStore):
+            return self._store.get_ids_by_source_file(source_file)
+        raise VectorStoreError(
+            "get_ids_by_source_file() is not supported by the current backend",
         )
