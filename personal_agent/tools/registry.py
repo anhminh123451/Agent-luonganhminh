@@ -605,31 +605,31 @@ def _register_default_tools() -> None:
     # uncomment các block tương ứng bên dưới.
 
     # --- FAQ Search Tool ---
-    # try:
-    #     from tools.faq_tool import FAQTool
-    #     ToolRegistry.register(FAQTool())
-    # except Exception as e:
-    #     logger.warning(f"Failed to register FAQTool: {e}")
+    try:
+        from tools.faq_tool import FAQTool
+        ToolRegistry.register(FAQTool())
+    except Exception as e:
+        logger.warning(f"Failed to register FAQTool: {e}")
 
     # --- Branch Search Tool ---
-    # try:
-    #     from tools.branch_tool import BranchSearchTool
-    #     ToolRegistry.register(BranchSearchTool())
-    # except Exception as e:
-    #     logger.warning(f"Failed to register BranchSearchTool: {e}")
+    try:
+        from tools.branch_tool import BranchSearchTool
+        ToolRegistry.register(BranchSearchTool())
+    except Exception as e:
+        logger.warning(f"Failed to register BranchSearchTool: {e}")
 
     # --- Web Search Tool ---
-    # try:
-    #     from tools.web_search_tool import WebSearchTool
-    #     ToolRegistry.register(WebSearchTool())
-    # except Exception as e:
-    #     logger.warning(f"Failed to register WebSearchTool: {e}")
+    try:
+        from tools.web_search_tool import WebSearchTool
+        ToolRegistry.register(WebSearchTool())
+    except Exception as e:
+        logger.warning(f"Failed to register WebSearchTool: {e}")
 
     # ── Định nghĩa profiles mặc định ─────────────────────────────
-    # available = ToolRegistry.available_tools()
-    # if available:
-    #     ToolRegistry.set_profile("banking_agent", available)
-    #     logger.info(f"Default profile 'banking_agent' set with: {available}")
+    available = ToolRegistry.available_tools()
+    if available:
+        ToolRegistry.set_profile("banking_agent", available)
+        logger.info(f"Default profile 'banking_agent' set with: {available}")
 
     registered = ToolRegistry.available_tools()
     logger.info(
