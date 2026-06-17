@@ -188,14 +188,14 @@ class GeminiEmbedder(BaseEmbedder):
     }
 
     # Batch size tối đa cho Gemini API
-    _MAX_BATCH_SIZE: ClassVar[int] = 100
+    _MAX_BATCH_SIZE: ClassVar[int] = 50
 
     def __init__(
         self,
         api_key: str | None = None,
         model: str = "gemini-embedding-2",
         task_type: str | None = None,
-        batch_size: int = 50,
+        batch_size: int = 25,
     ):
         self._model = model
         self._task_type = task_type

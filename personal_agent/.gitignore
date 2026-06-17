@@ -13,4 +13,6 @@ Module_info
 chroma_db
 data
 logs/
-fun
+fun.py
+data_added
+data_csv
