@@ -799,7 +799,7 @@ class Indexer:
         # ── Data directory ──
         if data_dir is None:
             # Mặc định: data/raw relative to personal_agent/
-            self._data_dir = Path("data/raw")
+            self._data_dir = Path("data/raw/faq_bank")
         else:
             self._data_dir = Path(data_dir)
 

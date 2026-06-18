@@ -2,24 +2,25 @@
 Branch Search Tool cho Banking AI Agent — Tool Layer.
 
 Tool nay tim chi nhanh ngan hang gan nhat dua tren vi tri nguoi dung,
-su dung Haversine formula de tinh khoang cach dia ly.
+su dung sklearn BallTree voi haversine metric de tinh khoang cach dia ly.
 
-Ho tro 2 cach xac dinh vi tri:
-    1. Toa do GPS truc tiep (latitude, longitude)
-    2. Ten dia diem dang text (vi du: "Ha Noi") -> tu geocode qua Nominatim
+Input chi can "location" (ten dia diem) — tool tu dong geocode thanh toa do
+GPS qua Nominatim, roi dung BallTree de tim k chi nhanh gan nhat.
+
+Du lieu branch duoc load truc tiep tu CSV file:
+    data/raw/branch_distance/branch_info.csv
 
 Kien truc:
     - BranchSearchArgs(ToolArgsSchema): Pydantic model validate input tu LLM
     - BranchSearchTool(BaseTool): Strategy cu the cho branch geospatial search
-    - Su dung VectorStore facade tu knowledge_base module (domain="branch_info")
-    - Su dung Haversine formula de tinh khoang cach giua 2 toa do GPS
+    - Su dung sklearn BallTree (metric=haversine) de tim nearest neighbors
     - Su dung OpenStreetMap Nominatim API de geocode dia chi text -> toa do
 
 Luong chay:
-    1. LLM goi tool "branch_search" voi args {location} hoac {latitude, longitude}
+    1. LLM goi tool "branch_search" voi args {location, top_k}
     2. BaseTool.safe_run() goi BranchSearchTool.run()
-    3. run() validate args -> geocode neu can -> query vector store (domain=branch_info)
-       -> tinh distance bang Haversine -> sort -> format top_k results
+    3. run() validate args -> geocode location thanh toa do
+       -> query BallTree -> tra ve top_k chi nhanh gan nhat
     4. Format ket qua thanh text context -> tra ToolResult
 
 Cach dang ky:
@@ -28,22 +29,22 @@ Cach dang ky:
 Vi du:
     from tools.branch_tool import BranchSearchTool
 
-    # Cach 1: Dung ten dia diem (LLM thuong dung cach nay)
     tool = BranchSearchTool()
     result = tool.safe_run(location="Ha Noi", top_k=3)
-
-    # Cach 2: Dung toa do GPS truc tiep
-    result = tool.safe_run(latitude=21.0285, longitude=105.8542, top_k=3)
-
     print(result.context)
 """
 
 from __future__ import annotations
 
 import math
+import os
+from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, model_validator
+import numpy as np
+import pandas as pd
+from pydantic import Field
+from sklearn.neighbors import BallTree
 
 from core.exceptions import ToolExecutionError
 from core.logger import get_logger
@@ -61,21 +62,14 @@ class BranchSearchArgs(ToolArgsSchema):
     """
     Input arguments cho BranchSearchTool.
 
-    LLM co the gui HOAC:
-        - location (str): Ten dia diem (vi du: "Ha Noi", "Quan 1 TP HCM")
-          -> Tool se tu geocode thanh toa do GPS qua Nominatim.
-        - latitude + longitude (float): Toa do GPS truc tiep.
-
-    It nhat 1 trong 2 cach phai duoc cung cap.
+    LLM chi can gui ten dia diem (location).
+    Tool se tu dong geocode thanh toa do GPS qua Nominatim.
 
     Fields:
-        location: Ten dia diem dang text (geocode tu dong).
-        latitude: Vi do GPS cua nguoi dung (-90 den 90).
-        longitude: Kinh do GPS cua nguoi dung (-180 den 180).
+        location: Ten dia diem dang text (geocode tu dong). BAT BUOC.
         top_k: So chi nhanh gan nhat can tra ve (1-10, mac dinh 3).
     """
-    location: str | None = Field(
-        default=None,
+    location: str = Field(
         min_length=1,
         max_length=500,
         description=(
@@ -83,99 +77,12 @@ class BranchSearchArgs(ToolArgsSchema):
             "Se tu dong chuyen thanh toa do GPS."
         ),
     )
-    latitude: float | None = Field(
-        default=None,
-        ge=-90.0,
-        le=90.0,
-        description="Vi do GPS cua nguoi dung (latitude). Dung khi da co toa do.",
-    )
-    longitude: float | None = Field(
-        default=None,
-        ge=-180.0,
-        le=180.0,
-        description="Kinh do GPS cua nguoi dung (longitude). Dung khi da co toa do.",
-    )
     top_k: int = Field(
         default=3,
         ge=1,
         le=10,
         description="So chi nhanh gan nhat can tra ve (1-10).",
     )
-
-    @model_validator(mode="after")
-    def validate_location_or_coordinates(self) -> BranchSearchArgs:
-        """
-        Dam bao it nhat 1 cach xac dinh vi tri duoc cung cap:
-            - location (text)
-            - latitude + longitude (toa do)
-
-        Neu ca 2 duoc cung cap, uu tien toa do GPS (chinh xac hon).
-        """
-        has_location = self.location is not None
-        has_coords = self.latitude is not None and self.longitude is not None
-
-        if not has_location and not has_coords:
-            raise ValueError(
-                "Must provide 'location' (place name) "
-                "or both 'latitude' + 'longitude' (GPS coordinates)."
-            )
-
-        # Canh bao neu chi co 1 trong 2 toa do (thieu 1 cai)
-        if (self.latitude is None) != (self.longitude is None):
-            raise ValueError(
-                "Must provide BOTH 'latitude' AND 'longitude', "
-                "cannot provide only one."
-            )
-
-        return self
-
-
-# =====================================================================
-# HAVERSINE FORMULA -- Tinh khoang cach giua 2 toa do GPS
-# =====================================================================
-
-# Ban kinh Trai Dat (km)
-_EARTH_RADIUS_KM = 6371.0
-
-
-def haversine_distance(
-    lat1: float,
-    lon1: float,
-    lat2: float,
-    lon2: float,
-) -> float:
-    """
-    Tinh khoang cach giua 2 diem tren be mat Trai Dat
-    su dung Haversine formula.
-
-    Args:
-        lat1: Vi do diem 1 (do).
-        lon1: Kinh do diem 1 (do).
-        lat2: Vi do diem 2 (do).
-        lon2: Kinh do diem 2 (do).
-
-    Returns:
-        Khoang cach tinh bang km.
-
-    Vi du:
-        >>> haversine_distance(21.0285, 105.8542, 21.0278, 105.8342)
-        2.11  # ~2.11 km
-    """
-    # Chuyen tu do sang radian
-    lat1_rad = math.radians(lat1)
-    lat2_rad = math.radians(lat2)
-    dlat = math.radians(lat2 - lat1)
-    dlon = math.radians(lon2 - lon1)
-
-    # Haversine formula
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(lat1_rad) * math.cos(lat2_rad)
-        * math.sin(dlon / 2) ** 2
-    )
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-
-    return _EARTH_RADIUS_KM * c
 
 
 # =====================================================================
@@ -253,17 +160,20 @@ def geocode(address: str) -> tuple[float, float] | None:
 # BRANCH SEARCH TOOL -- Tool tim chi nhanh gan nhat
 # =====================================================================
 
+# Ban kinh Trai Dat (km)
+_EARTH_RADIUS_KM = 6371.0
+
+
 class BranchSearchTool(BaseTool):
     """
     Tool tim chi nhanh ngan hang gan nhat dua tren vi tri nguoi dung.
 
-    Ho tro 2 cach xac dinh vi tri:
-        1. Ten dia diem (location) -> tu geocode qua Nominatim
-        2. Toa do GPS truc tiep (latitude, longitude)
+    Input chi can ten dia diem (location) — tool tu dong geocode thanh
+    toa do GPS qua Nominatim, roi dung sklearn BallTree (metric=haversine)
+    de tim k chi nhanh gan nhat tu CSV data.
 
-    Truy van toan bo du lieu branch tu vector store (domain=branch_info),
-    tinh khoang cach bang Haversine formula, va tra ve top_k chi nhanh
-    gan nhat.
+    Du lieu branch duoc load tu CSV va xay dung BallTree 1 lan (lazy init),
+    sau do reuse cho cac query tiep theo.
 
     Attributes:
         name: "branch_search" -- ten tool (LLM dung ten nay de goi).
@@ -271,156 +181,62 @@ class BranchSearchTool(BaseTool):
         category: GEOSPATIAL -- tool lien quan vi tri dia ly.
         args_schema: BranchSearchArgs -- validate input.
 
-    Luồng chạy chi tiết:
-        1. validate_args() -> BranchSearchArgs (location hoac lat/lon, top_k)
-        2. _resolve_coordinates() -> geocode neu can -> (latitude, longitude)
-        3. _get_vector_store() -> VectorStore instance (lazy init)
-        4. VectorStore.query(domain="branch_info") -> QueryResult (all branches)
-        5. _calculate_and_rank() -> list of (branch_info, distance_km)
-        6. Sort by distance -> lay top_k
-        7. _format_results() -> formatted context string
-        8. Return ToolResult(context=..., source="branch_search", metadata=...)
+    Luong chay chi tiet:
+        1. validate_args() -> BranchSearchArgs (location, top_k)
+        2. geocode(location) -> (latitude, longitude)
+        3. _get_ball_tree() -> BallTree (lazy init tu CSV)
+        4. BallTree.query() -> top_k nearest neighbors
+        5. _format_results() -> formatted context string
+        6. Return ToolResult(context=..., source="branch_search", metadata=...)
     """
 
     # --- Metadata (override BaseTool) ---------------------------------
     name: ClassVar[str] = "branch_search"
     description: ClassVar[str] = (
         "Tìm chi nhánh ngân hàng gần nhất dựa trên vị trí người dùng. "
-        "Có thể truyền tên địa điểm (ví dụ: 'Hà Nội', 'Quận 1 TP HCM') "
-        "hoặc tọa độ GPS (latitude, longitude). "
+        "Truyền tên địa điểm (ví dụ: 'Hà Nội', 'Quận 1 TP HCM'). "
         "Sử dụng khi người dùng hỏi về chi nhánh gần đây, "
         "địa điểm giao dịch, hoặc muốn tìm ngân hàng gần nhất."
     )
     category: ClassVar[ToolCategory] = ToolCategory.GEOSPATIAL
     args_schema: ClassVar[type[ToolArgsSchema]] = BranchSearchArgs
-    version: ClassVar[str] = "1.1.0"
+    version: ClassVar[str] = "2.0.0"
 
     # --- Config -------------------------------------------------------
-    # Domain trong vector store chua du lieu branch
-    _BRANCH_DOMAIN: ClassVar[str] = "branch_info"
-
-    # So luong branch toi da lay tu vector store moi lan query
-    # (lay du nhieu de sort distance chinh xac)
-    _MAX_FETCH: ClassVar[int] = 200
+    # Duong dan tuong doi toi CSV file (tu thu muc personal_agent/)
+    _CSV_PATH: ClassVar[str] = os.path.join(
+        "data", "raw", "branch_distance", "branch_info.csv"
+    )
 
     # --- Internal state (lazy-initialized) ----------------------------
-    _vector_store = None
+    _ball_tree: BallTree | None = None
+    _branch_df: pd.DataFrame | None = None
 
     # --- Core logic ---------------------------------------------------
 
     def run(self, **kwargs) -> ToolResult:
         """
-        Thuc thi branch search: resolve vi tri -> query branches -> sort -> format.
+        Thuc thi branch search: geocode location -> query BallTree -> format.
 
         Args:
             **kwargs: Arguments tu LLM, se duoc validate thanh BranchSearchArgs.
-                - location (str, optional): Ten dia diem (geocode tu dong).
-                - latitude (float, optional): Vi do GPS.
-                - longitude (float, optional): Kinh do GPS.
+                - location (str): Ten dia diem (geocode tu dong). BAT BUOC.
                 - top_k (int, default=3): So chi nhanh gan nhat.
-
-                Phai cung cap location HOAC (latitude + longitude).
 
         Returns:
             ToolResult voi context chua danh sach chi nhanh gan nhat.
 
         Raises:
             ToolValidationError: Input khong hop le (qua validate_args).
-            ToolExecutionError: Loi khi geocode, query vector store, hoac tinh distance.
+            ToolExecutionError: Loi khi geocode, load CSV, hoac query BallTree.
         """
         # -- Step 1: Validate input ------------------------------------
         args = self.validate_args(**kwargs)
 
-        # -- Step 2: Resolve toa do (geocode neu can) ------------------
-        user_lat, user_lon, resolved_from = self._resolve_coordinates(args)
+        # -- Step 2: Geocode location -> toa do GPS --------------------
+        coords = geocode(args.location)
 
-        logger.info(
-            f"Branch search: lat={user_lat}, lon={user_lon}, "
-            f"top_k={args.top_k}, resolved_from={resolved_from}"
-        )
-
-        # -- Step 3: Query toan bo branches tu vector store ------------
-        query_result = self._query_branches()
-
-        # -- Step 4: Xu ly ket qua rong -------------------------------
-        if query_result.is_empty:
-            logger.info("Branch search: no branch data found in vector store")
-            return ToolResult(
-                context="Khong tim thay du lieu chi nhanh ngan hang trong he thong.",
-                source=self.name,
-                metadata={
-                    "latitude": user_lat,
-                    "longitude": user_lon,
-                    "location": args.location,
-                    "resolved_from": resolved_from,
-                    "n_results": 0,
-                },
-            )
-
-        # -- Step 5: Tinh khoang cach va sap xep ----------------------
-        ranked_branches = self._calculate_and_rank(
-            query_result=query_result,
-            user_lat=user_lat,
-            user_lon=user_lon,
-            top_k=args.top_k,
-        )
-
-        # -- Step 6: Format ket qua thanh text context -----------------
-        context = self._format_results(
-            ranked_branches, user_lat, user_lon, args.location,
-        )
-
-        logger.info(
-            f"Branch search: found {len(ranked_branches)} nearest branches "
-            f"for location ({user_lat}, {user_lon})"
-        )
-
-        return ToolResult(
-            context=context,
-            source=self.name,
-            metadata={
-                "latitude": user_lat,
-                "longitude": user_lon,
-                "location": args.location,
-                "resolved_from": resolved_from,
-                "n_results": len(ranked_branches),
-                "nearest_distance_km": (
-                    round(ranked_branches[0]["distance_km"], 2)
-                    if ranked_branches
-                    else None
-                ),
-            },
-        )
-
-    # --- Private helper methods ---------------------------------------
-
-    def _resolve_coordinates(
-        self,
-        args: BranchSearchArgs,
-    ) -> tuple[float, float, str]:
-        """
-        Xac dinh toa do GPS tu args -- dung truc tiep hoac geocode.
-
-        Uu tien: toa do GPS > geocode tu location text.
-
-        Args:
-            args: Validated BranchSearchArgs.
-
-        Returns:
-            Tuple (latitude, longitude, resolved_from).
-            resolved_from: "coordinates" hoac "geocode".
-
-        Raises:
-            ToolExecutionError: Khi geocode that bai (location khong tim thay).
-        """
-        # Uu tien toa do GPS truc tiep (chinh xac hon)
-        if args.latitude is not None and args.longitude is not None:
-            return args.latitude, args.longitude, "coordinates"
-
-        # Geocode tu ten dia diem
-        result = geocode(args.location)
-
-        if result is None:
+        if coords is None:
             raise ToolExecutionError(
                 f"Khong the xac dinh toa do cho dia diem: '{args.location}'. "
                 f"Vui long thu lai voi ten dia diem cu the hon "
@@ -432,173 +248,168 @@ class BranchSearchTool(BaseTool):
                 },
             )
 
-        return result[0], result[1], "geocode"
+        user_lat, user_lon = coords
 
-    def _get_vector_store(self):
+        logger.info(
+            f"Branch search: location='{args.location}', "
+            f"lat={user_lat}, lon={user_lon}, top_k={args.top_k}"
+        )
+
+        # -- Step 3: Load CSV + build BallTree (lazy init) -------------
+        ball_tree, branch_df = self._get_ball_tree()
+
+        if branch_df.empty:
+            logger.info("Branch search: no branch data found in CSV")
+            return ToolResult(
+                context="Khong tim thay du lieu chi nhanh ngan hang trong he thong.",
+                source=self.name,
+                metadata={
+                    "latitude": user_lat,
+                    "longitude": user_lon,
+                    "location": args.location,
+                    "n_results": 0,
+                },
+            )
+
+        # -- Step 4: Query BallTree cho top_k nearest neighbors --------
+        # BallTree voi haversine metric yeu cau toa do o dang radian
+        user_point = np.array([[math.radians(user_lat), math.radians(user_lon)]])
+
+        # Dam bao top_k khong vuot qua so luong branches
+        k = min(args.top_k, len(branch_df))
+
+        distances_rad, indices = ball_tree.query(user_point, k=k)
+
+        # Chuyen khoang cach tu radian -> km (haversine tra ve radian)
+        distances_km = distances_rad[0] * _EARTH_RADIUS_KM
+
+        # -- Step 5: Xay dung danh sach ket qua -----------------------
+        ranked_branches = []
+        for idx, dist_km in zip(indices[0], distances_km):
+            row = branch_df.iloc[idx]
+            ranked_branches.append({
+                "branch_name": row.get("branch_name", "N/A"),
+                "branch_address": row.get("branch_address", "N/A"),
+                "latitude": row.get("lattitude", 0.0),
+                "longitude": row.get("longtitude", 0.0),
+                "distance_km": float(dist_km),
+            })
+
+        # -- Step 6: Format ket qua thanh text context -----------------
+        context = self._format_results(
+            ranked_branches, user_lat, user_lon, args.location,
+        )
+
+        logger.info(
+            f"Branch search: found {len(ranked_branches)} nearest branches "
+            f"for location '{args.location}' ({user_lat}, {user_lon})"
+        )
+
+        return ToolResult(
+            context=context,
+            source=self.name,
+            metadata={
+                "latitude": user_lat,
+                "longitude": user_lon,
+                "location": args.location,
+                "n_results": len(ranked_branches),
+                "nearest_distance_km": (
+                    round(ranked_branches[0]["distance_km"], 2)
+                    if ranked_branches
+                    else None
+                ),
+            },
+        )
+
+    # --- Private helper methods ---------------------------------------
+
+    def _get_ball_tree(self) -> tuple[BallTree, pd.DataFrame]:
         """
-        Lazy-initialize VectorStore facade.
+        Lazy-initialize BallTree tu CSV data.
 
-        Tao instance lan dau khi can, sau do reuse.
-        Tach rieng de de test (mock) va tranh import luc module load.
-        """
-        if self._vector_store is None:
-            from knowledge_base.vector_store import VectorStore
-            self._vector_store = VectorStore()
-            logger.debug("BranchSearchTool: VectorStore initialized")
-        return self._vector_store
-
-    def _query_branches(self):
-        """
-        Query toan bo branch documents tu vector store.
-
-        Su dung domain filter "branch_info" de chi lay du lieu
-        chi nhanh, khong lan FAQ hoac data khac.
+        Load CSV 1 lan, xay dung BallTree voi haversine metric,
+        sau do cache lai de reuse cho cac query tiep theo.
 
         Returns:
-            QueryResult tu vector store chua tat ca branches.
+            Tuple (BallTree, DataFrame) — BallTree da build va DataFrame goc.
 
         Raises:
-            ToolExecutionError: Khi query vector store that bai.
+            ToolExecutionError: Khi khong tim thay CSV hoac parse loi.
         """
+        if self._ball_tree is not None and self._branch_df is not None:
+            return self._ball_tree, self._branch_df
+
         try:
-            store = self._get_vector_store()
+            # Resolve duong dan CSV tuyet doi tu vi tri module hien tai
+            # personal_agent/tools/branch_tool.py -> personal_agent/
+            module_dir = Path(__file__).resolve().parent.parent
+            csv_path = module_dir / self._CSV_PATH
 
-            # Lay so luong branch docs thuc te trong store
-            branch_count = store.count_by_domain(self._BRANCH_DOMAIN)
-
-            if branch_count == 0:
-                logger.warning(
-                    f"No documents found in domain '{self._BRANCH_DOMAIN}'"
+            if not csv_path.exists():
+                raise FileNotFoundError(
+                    f"Branch CSV file not found: {csv_path}"
                 )
-                from knowledge_base.vector_store import QueryResult
-                return QueryResult()
 
-            # Fetch tat ca branches (hoac toi da _MAX_FETCH)
-            fetch_count = min(branch_count, self._MAX_FETCH)
+            logger.info(f"Loading branch data from: {csv_path}")
 
-            result = store.query(
-                query_text="branch",  # Dummy query text de lay tat ca
-                n_results=fetch_count,
-                domain=self._BRANCH_DOMAIN,
+            # Doc CSV
+            df = pd.read_csv(csv_path, encoding="utf-8")
+
+            # Validate cac cot bat buoc
+            required_cols = {"branch_name", "branch_address", "lattitude", "longtitude"}
+            missing_cols = required_cols - set(df.columns)
+            if missing_cols:
+                raise ValueError(
+                    f"CSV missing required columns: {missing_cols}. "
+                    f"Available columns: {list(df.columns)}"
+                )
+
+            # Loai bo hang co toa do NaN hoac khong hop le
+            df = df.dropna(subset=["lattitude", "longtitude"])
+            df["lattitude"] = pd.to_numeric(df["lattitude"], errors="coerce")
+            df["longtitude"] = pd.to_numeric(df["longtitude"], errors="coerce")
+            df = df.dropna(subset=["lattitude", "longtitude"])
+
+            if df.empty:
+                logger.warning("No valid branch coordinates found in CSV")
+                self._branch_df = df
+                self._ball_tree = None
+                return self._ball_tree, self._branch_df
+
+            # Xay dung BallTree voi haversine metric
+            # haversine yeu cau toa do o dang radian: [lat_rad, lon_rad]
+            coords_rad = np.deg2rad(
+                df[["lattitude", "longtitude"]].values
             )
-            return result
 
-        except Exception as e:
+            self._ball_tree = BallTree(coords_rad, metric="haversine")
+            self._branch_df = df.reset_index(drop=True)
+
+            logger.info(
+                f"BallTree built with {len(self._branch_df)} branches "
+                f"(metric=haversine)"
+            )
+
+            return self._ball_tree, self._branch_df
+
+        except FileNotFoundError as e:
             raise ToolExecutionError(
-                f"Failed to query branch data from vector store: {e}",
+                f"Branch data file not found: {e}",
                 details={
                     "tool_name": self.name,
-                    "domain": self._BRANCH_DOMAIN,
+                    "csv_path": str(csv_path),
                     "error": str(e),
                 },
             ) from e
 
-    def _calculate_and_rank(
-        self,
-        query_result,
-        user_lat: float,
-        user_lon: float,
-        top_k: int,
-    ) -> list[dict]:
-        """
-        Tinh khoang cach Haversine va xep hang theo khoang cach gan nhat.
-
-        Args:
-            query_result: QueryResult tu vector store.
-            user_lat: Vi do GPS cua nguoi dung.
-            user_lon: Kinh do GPS cua nguoi dung.
-            top_k: So chi nhanh can tra ve.
-
-        Returns:
-            Danh sach top_k dicts, moi dict chua:
-                - branch_name (str): Ten chi nhanh.
-                - branch_address (str): Dia chi chi nhanh.
-                - latitude (float): Vi do chi nhanh.
-                - longitude (float): Kinh do chi nhanh.
-                - distance_km (float): Khoang cach tu user (km).
-                - document (str): Noi dung document goc.
-
-        Raises:
-            ToolExecutionError: Khi parse metadata that bai.
-        """
-        branches_with_distance = []
-
-        for i, doc in enumerate(query_result.documents):
-            metadata = (
-                query_result.metadatas[i]
-                if i < len(query_result.metadatas)
-                else {}
-            )
-
-            # Parse toa do tu metadata
-            # Chu y: field name trong CSV la "lattitude" va "longtitude"
-            # (typo tu du lieu goc -- giu nguyen de tuong thich)
-            branch_lat = self._parse_coordinate(
-                metadata, ["lattitude", "latitude"], "latitude"
-            )
-            branch_lon = self._parse_coordinate(
-                metadata, ["longtitude", "longitude"], "longitude"
-            )
-
-            # Bo qua branch khong co toa do hop le
-            if branch_lat is None or branch_lon is None:
-                logger.debug(
-                    f"Skipping branch at index {i}: missing coordinates. "
-                    f"metadata={metadata}"
-                )
-                continue
-
-            # Tinh khoang cach Haversine
-            distance = haversine_distance(
-                user_lat, user_lon, branch_lat, branch_lon
-            )
-
-            branches_with_distance.append({
-                "branch_name": metadata.get("branch_name", "N/A"),
-                "branch_address": metadata.get("branch_address", "N/A"),
-                "latitude": branch_lat,
-                "longitude": branch_lon,
-                "distance_km": distance,
-                "document": doc,
-            })
-
-        # Sap xep theo khoang cach tang dan
-        branches_with_distance.sort(key=lambda x: x["distance_km"])
-
-        # Tra ve top_k
-        return branches_with_distance[:top_k]
-
-    @staticmethod
-    def _parse_coordinate(
-        metadata: dict,
-        field_names: list[str],
-        coord_type: str,
-    ) -> float | None:
-        """
-        Parse toa do GPS tu metadata, ho tro nhieu ten field.
-
-        Du lieu goc co typo: "lattitude" va "longtitude",
-        nhung method nay cung fallback sang ten dung chinh ta.
-
-        Args:
-            metadata: Dict metadata tu vector store.
-            field_names: Danh sach ten field can thu (uu tien theo thu tu).
-            coord_type: "latitude" hoac "longitude" (dung cho logging).
-
-        Returns:
-            float neu parse thanh cong, None neu khong tim thay.
-        """
-        for field_name in field_names:
-            value = metadata.get(field_name)
-            if value is not None:
-                try:
-                    return float(value)
-                except (ValueError, TypeError):
-                    logger.warning(
-                        f"Invalid {coord_type} value: "
-                        f"{field_name}={value!r}"
-                    )
-        return None
+        except Exception as e:
+            raise ToolExecutionError(
+                f"Failed to load branch data from CSV: {e}",
+                details={
+                    "tool_name": self.name,
+                    "error": str(e),
+                },
+            ) from e
 
     @staticmethod
     def _format_results(
@@ -625,7 +436,7 @@ class BranchSearchTool(BaseTool):
             ranked_branches: Danh sach dicts da sort theo distance.
             user_lat: Vi do GPS cua nguoi dung.
             user_lon: Kinh do GPS cua nguoi dung.
-            location: Ten dia diem goc (neu dung geocode).
+            location: Ten dia diem goc (tu input).
 
         Returns:
             Formatted text string.
