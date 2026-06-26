@@ -1,10 +1,12 @@
-from tools import web_search_tool
-from tools.web_search_tool import WebSearchTool
+from agent.prompts import  build_system_prompt_for_profile
+from tools.registry import ToolRegistry,setup_tools
 
-web_search_tool = WebSearchTool()
-kwargs = {
-    "query" : "messi đã ghi mấy bàn trong trận argentina với Áo ",
-    "extract_content" : "True"
-}
-res = web_search_tool.run(**kwargs)
-print(res.context)
+setup_tools()
+available_tool = ToolRegistry.get_tools_for_profile("agent_core")
+
+
+prompt = build_system_prompt_for_profile(profile_name="agent_core", agent_name="AI Assistant")
+
+print(prompt)
+
+                                    

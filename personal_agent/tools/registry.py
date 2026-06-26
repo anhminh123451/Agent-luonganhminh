@@ -628,8 +628,8 @@ def _register_default_tools() -> None:
     # ── Định nghĩa profiles mặc định ─────────────────────────────
     available = ToolRegistry.available_tools()
     if available:
-        ToolRegistry.set_profile("banking_agent", available)
-        logger.info(f"Default profile 'banking_agent' set with: {available}")
+        ToolRegistry.set_profile("agent_core", available)
+        logger.info(f"Default profile 'agent_core' set with: {available}")
 
     registered = ToolRegistry.available_tools()
     logger.info(
