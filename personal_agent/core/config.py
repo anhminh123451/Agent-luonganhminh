@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     LLM_PROVIDER: str = "gemini"  # hoặc "groq"
     EMBEDDING_PROVIDER: str = "gemini"  # Provider embedding (gemini, openai, ...)
     EMBEDDING_MODEL: str = "gemini-embedding-2"  # Model embedding cụ thể
-    MAX_AGENT_STEPS: int = 5
+    MAX_AGENT_STEPS: int = 10
     LOG_LEVEL: str = "INFO"   # DEBUG, INFO, WARNING, ERROR, CRITICAL
     LOG_DIR: str = "logs"      # Thư mục lưu file log
 

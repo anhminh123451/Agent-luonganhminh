@@ -368,14 +368,13 @@ class ToolRegistry:
         """
         Lấy danh sách tool instances được phép cho một agent profile.
 
-        Nếu profile không tồn tại, trả về TẤT CẢ tools đã đăng ký
-        (behavior mặc định — không giới hạn).
+        Nếu profile không tồn tại, trả về danh sách rỗng.
 
         Args:
             profile_name: Tên agent profile.
 
         Returns:
-            Danh sách BaseTool instances.
+            Danh sách BaseTool instances (rỗng nếu profile chưa đăng ký).
 
         Ví dụ:
             tools = ToolRegistry.get_tools_for_profile("banking_agent")
@@ -383,11 +382,12 @@ class ToolRegistry:
                 print(f"  {tool.name}: {tool.description}")
         """
         if profile_name not in cls._profiles:
-            logger.debug(
+            logger.warning(
                 f"Profile '{profile_name}' not defined — "
-                f"returning all {len(cls._registry)} registered tools"
+                f"returning empty tool list. "
+                f"Available profiles: {cls.available_profiles()}"
             )
-            return list(cls._registry.values())
+            return []
 
         tool_names = cls._profiles[profile_name]
         tools = []
@@ -417,10 +417,10 @@ class ToolRegistry:
             tool_name: Tên tool cần kiểm tra.
 
         Returns:
-            True nếu được phép (hoặc profile chưa định nghĩa = cho phép tất cả).
+            True nếu được phép, False nếu profile chưa định nghĩa hoặc tool không có quyền.
         """
         if profile_name not in cls._profiles:
-            return True  # Không có profile = không giới hạn
+            return False  # Profile chưa đăng ký = không cho phép
 
         return tool_name.lower() in cls._profiles[profile_name]
 
@@ -628,8 +628,8 @@ def _register_default_tools() -> None:
     # ── Định nghĩa profiles mặc định ─────────────────────────────
     available = ToolRegistry.available_tools()
     if available:
-        ToolRegistry.set_profile("agent_core", available)
-        logger.info(f"Default profile 'agent_core' set with: {available}")
+        ToolRegistry.set_profile("personal_agent", available)
+        logger.info(f"Default profile 'personal_agent' set with: {available}")
 
     registered = ToolRegistry.available_tools()
     logger.info(

@@ -1,0 +1,54 @@
+# ═══════════════════════════════════════════════════════════════════════
+# Agent Profiles Configuration — Banking AI Agent
+# ═══════════════════════════════════════════════════════════════════════
+#
+# File này định nghĩa cấu hình cho các agent profiles.
+# Được load bởi: agent/profiles.py → load_profiles_from_yaml()
+#
+# Cách sử dụng:
+#   from agent.profiles import setup_profiles
+#   setup_profiles(yaml_path="config/profiles.yaml")
+#
+# Khi thêm profile mới:
+#   1. Thêm block mới dưới "profiles:"
+#   2. Đảm bảo allowed_tools chỉ chứa tools đã đăng ký trong ToolRegistry
+#   3. Restart app để load lại
+#
+# Tools hiện có:
+#   - faq_search      : Tra cứu FAQ ngân hàng từ vector database
+#   - branch_search   : Tìm chi nhánh gần nhất theo vị trí địa lý
+#   - web_search      : Tìm kiếm thông tin trên internet
+# ═══════════════════════════════════════════════════════════════════════
+
+profiles:
+
+  # ── Personal Agent (default) ──────────────────────────────────────
+  # Profile mặc định của hệ thống, truy cập toàn bộ tools.
+  personal_agent:
+    agent_name: "AI Assistant"
+    description: >-
+      Trợ lý AI tổng quát với quyền truy cập tất cả tools.
+      Phù hợp cho các câu hỏi đa dạng, không giới hạn domain.
+    allowed_tools:
+      - faq_search
+      - branch_search
+      - web_search
+    max_steps: 10
+    metadata:
+      tier: default
+      domain: all
+
+  banking_agent:
+    agent_name: "AI Assistant Banking"
+    description: >-
+      Trợ lý AI Banking với quyền truy cập banking tools
+      Phù hợp cho các câu hỏi đa dạng, không giới hạn domain.
+    allowed_tools:
+      - faq_search
+      - branch_search
+    max_steps: 10
+    metadata:
+      tier: default
+      domain: banking
+
+  
