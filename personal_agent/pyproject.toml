@@ -9,6 +9,7 @@ dependencies = [
     "ddgs>=9.14.4",
     "google-genai>=2.8.0",
     "langchain-core>=1.4.8",
+    "langgraph>=1.2.7",
     "pandas>=2.3.3",
     "pydantic-settings>=2.14.1",
     "python-dotenv>=1.2.2",
