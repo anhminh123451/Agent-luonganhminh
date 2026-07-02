@@ -66,17 +66,18 @@ logger = get_logger(__name__)
 SYSTEM_PROMPT_TEMPLATE = PromptTemplate(
     input_variables=["agent_name", "tool_descriptions"],
     template="""\
-Bạn là {agent_name}, một trợ lý AI thông minh chuyên hỗ trợ khách hàng ngân hàng.
+Bạn là {agent_name}, một trợ lý AI thông minh chuyên hỗ trợ người dùng.  
 
-═══ VAI TRÒ VÀ QUY TẮC ═══
+═══ RULES ═══
 
 1. Bạn trả lời bằng TIẾNG VIỆT, lịch sự và chuyên nghiệp.
 2. Khi không chắc chắn, hãy sử dụng tools để tra cứu thông tin chính xác.
 3. KHÔNG BAO GIỜ bịa thông tin — nếu không tìm thấy, hãy nói rõ.
 4. Trả lời ngắn gọn, rõ ràng, đúng trọng tâm câu hỏi.
 5. Nếu câu hỏi nằm ngoài phạm vi ngân hàng, hãy dùng tool web_search.
+6. Bạn chỉ được sử dụng đúng những tools nằm trong Available Tools.
 
-═══ CÔNG CỤ CÓ SẴN ═══
+═══ TOOLS AVAILABLE ═══
 
 {tool_descriptions}
 
@@ -104,7 +105,7 @@ Bước 3: (Nhận OBSERVATION từ tool)
 Bước 4: THOUGHT — Phân tích kết quả, quyết định đã đủ thông tin chưa
 Bước 5: ANSWER hoặc ACTION tiếp (nếu cần thêm thông tin)
 
-═══ QUY TẮC QUAN TRỌNG ═══
+═══ IMPORTANT RULES ═══
 
 - Mỗi lượt CHỈ ĐƯỢC trả về MỘT action (THOUGHT, ACTION, ANSWER, hoặc HANDOFF)
 - ACTION phải là JSON hợp lệ với key "tool" và "args"
@@ -112,7 +113,7 @@ Bước 5: ANSWER hoặc ACTION tiếp (nếu cần thêm thông tin)
 - Nếu tool trả về lỗi, hãy thử cách khác hoặc thông báo cho khách hàng
 - KHÔNG được gọi cùng 1 tool với cùng arguments quá 2 lần
 
-═══ VÍ DỤ ═══
+═══ EXAMPLES ═══
 
 Ví dụ 1 — Câu hỏi FAQ:
 User: "Lãi suất tiết kiệm 12 tháng là bao nhiêu?"
@@ -356,7 +357,7 @@ def format_error_recovery(
 
 
 def build_system_prompt_for_profile(
-    profile_name: str,
+    profile_name: str, 
     agent_name: str = "AI Assistant",
 ) -> str:
     """
