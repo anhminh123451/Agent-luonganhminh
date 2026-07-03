@@ -138,7 +138,7 @@ class WebSearchArgs(ToolArgsSchema):
         ),
     )
     extract_content: bool = Field(
-        default=False,
+        default=True,
         description=(
             "Nếu True, fetch và trích xuất nội dung đầy đủ từ các trang web "
             "kết quả (sử dụng khi cần thông tin chi tiết). "
@@ -191,7 +191,7 @@ class WebSearchTool(BaseTool):
         "Sử dụng khi câu hỏi cần thông tin mới nhất, tin tức, "
         "hoặc thông tin không có trong FAQ database nội bộ. "
         "Có thể trích xuất nội dung đầy đủ từ trang web kết quả "
-        "nếu cần thông tin chi tiết (đặt extract_content=true)."
+        "nếu cần thông tin chi tiết (đặt extract_content=True)."
     )
     category: ClassVar[ToolCategory] = ToolCategory.WEB
     args_schema: ClassVar[type[ToolArgsSchema]] = WebSearchArgs

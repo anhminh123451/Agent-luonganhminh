@@ -38,17 +38,5 @@ profiles:
       tier: default
       domain: all
 
-  banking_agent:
-    agent_name: "AI Assistant Banking"
-    description: >-
-      Trợ lý AI Banking với quyền truy cập banking tools
-      Phù hợp cho các câu hỏi đa dạng, không giới hạn domain.
-    allowed_tools:
-      - faq_search
-      - branch_search
-    max_steps: 10
-    metadata:
-      tier: default
-      domain: banking
-
+  
   

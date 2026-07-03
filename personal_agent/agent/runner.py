@@ -334,14 +334,14 @@ class AgentRunner:
 
     def __init__(
         self,
-        model: str = "gemini-2.5-flash",
+        model: str = settings.MODEL_LLM,
     ) -> None:
         """
         Khởi tạo AgentRunner.
 
         Args:
             model: Tên model Gemini sử dụng.
-                   Mặc định "gemini-2.5-flash".
+                   Mặc định kiểm tra trong CONFIG.
         """
         self._client = _create_llm_client()
         self._model = model
