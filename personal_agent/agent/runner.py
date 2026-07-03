@@ -486,11 +486,12 @@ class AgentRunner:
                 ),
             }
 
-        # ── 2. Build system prompt (lần đầu tiên) ────────────────────
+        # ── 2. Build system prompt / Xử lý tiếp tục hội thoại ────────
         messages = state["messages"]
+        query = state["query"]
 
         if not messages:
-            # Lần đầu: inject system prompt + user query
+            # ── Hội thoại mới: inject system prompt + user query ──────
             profile = get_profile(state["agent_profile"])
 
             system_prompt = build_system_prompt_for_profile(
@@ -500,13 +501,35 @@ class AgentRunner:
 
             messages = [
                 {"role": MessageRole.SYSTEM.value, "content": system_prompt},
-                {"role": MessageRole.USER.value, "content": state["query"]},
+                {"role": MessageRole.USER.value, "content": query},
             ]
 
             logger.debug(
                 f"Initialized messages with system prompt | "
                 f"profile={state['agent_profile']}"
             )
+        else:
+            # ── Tiếp tục hội thoại (messages có sẵn từ checkpoint) ────
+            # Kiểm tra xem query mới đã nằm trong messages chưa
+            # Nếu chưa → append user message cho query mới
+            last_user_msg = None
+            for msg in reversed(messages):
+                if msg["role"] == MessageRole.USER.value:
+                    last_user_msg = msg["content"]
+                    break
+
+            if last_user_msg != query:
+                messages = messages + [
+                    {"role": MessageRole.USER.value, "content": query},
+                ]
+                logger.debug(
+                    f"Continued conversation — appended new user query | "
+                    f"query='{query[:50]}...'"
+                )
+            else:
+                logger.debug(
+                    "Query already in messages — no append needed"
+                )
 
         # ── 3. Inject step limit warning (nếu gần hết bước) ──────────
         if should_warn_step_limit(current_step, state["max_steps"]):
