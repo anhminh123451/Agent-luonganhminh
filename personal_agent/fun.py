@@ -14,16 +14,16 @@ setup_tools()
 setup_profiles(yaml_path="config/profiles.yaml")
 
 # Session ID co dinh de test multi-turn
-SESSION_ID = "demo-session-001"
+SESSION_ID = "demo-session-004"
 
 print("=" * 60)
 print("DEMO: Multi-turn Conversation with SQLite Checkpointer")
 print("=" * 60)
 
 # -- Luot 1: Hoi cau hoi --
-print("\ntôi đang ở Hà nội , tìm ngân hàng gần nhất quanh đây")
+print("\n Hãy nhớ tên của tôi là Lương Anh Minh")
 res1 = invoke_agent(
-    query="tôi đang ở Hà nội , tìm ngân hàng gần nhất quanh đây",
+    query="Hãy nhớ tên của tôi là Lương Anh Minh",
     session_id=SESSION_ID,
     max_steps=5,
 )
@@ -33,9 +33,9 @@ print(f"         Status: {res1.get('status')}")
 
 # -- Luot 2: Hoi tiep -- agent nen nho ngu canh --
 print("\n" + "-" * 60)
-print("\n[Turn 2] User: tôi đang ở Hồ Chí Minh , tìm ngân hàng gần nhất quanh đây")
+print("\n dựa theo những gì tôi đã nói , Tên của tôi là gì ? ")
 res2 = invoke_agent(
-    query="tôi đang ở Hồ Chí Minh , tìm ngân hàng gần nhất quanh đây",
+    query="Tên của tôi là gì ?",
     session_id=SESSION_ID,
     max_steps=5,
 )
