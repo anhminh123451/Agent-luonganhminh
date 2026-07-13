@@ -192,6 +192,7 @@ class WebSearchTool(BaseTool):
         "hoặc thông tin không có trong FAQ database nội bộ. "
         "Có thể trích xuất nội dung đầy đủ từ trang web kết quả "
         "nếu cần thông tin chi tiết (đặt extract_content=True)."
+        "Luôn thử với extract_content=False khoảng 1-2 lần nếu chưa đạt được kết quả mong muốn mới đặt extract_content=True"
     )
     category: ClassVar[ToolCategory] = ToolCategory.WEB
     args_schema: ClassVar[type[ToolArgsSchema]] = WebSearchArgs
