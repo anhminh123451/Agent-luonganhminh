@@ -77,7 +77,7 @@ _MAX_CONTENT_LENGTH = 3000
 _MAX_TOTAL_CONTEXT_LENGTH = 8000
 
 # Số worker threads cho parallel content extraction
-_MAX_WORKERS = 3
+_MAX_WORKERS = 10
 
 # User-Agent header để tránh bị block
 _USER_AGENT = (
@@ -192,7 +192,7 @@ class WebSearchTool(BaseTool):
         "hoặc thông tin không có trong FAQ database nội bộ. "
         "Có thể trích xuất nội dung đầy đủ từ trang web kết quả "
         "nếu cần thông tin chi tiết (đặt extract_content=True)."
-        "Luôn thử với extract_content=False khoảng 1-2 lần nếu chưa đạt được kết quả mong muốn mới đặt extract_content=True"
+        "Luôn thử với extract_content=False trong DUY NHẤT 1 lần , nếu không đủ thông tin hãy lập tức chuyển thành extract_content=True"
     )
     category: ClassVar[ToolCategory] = ToolCategory.WEB
     args_schema: ClassVar[type[ToolArgsSchema]] = WebSearchArgs
@@ -210,7 +210,7 @@ class WebSearchTool(BaseTool):
                 - max_results (int, default=5): Số kết quả.
                 - region (str, default="wt-wt"): Region filter.
                 - timelimit (str|None, default=None): Giới hạn thời gian.
-                - extract_content (bool, default=False): Có fetch nội dung không.
+                - extract_content (bool, default=True): Có fetch nội dung không.
 
         Returns:
             ToolResult với context chứa kết quả tìm kiếm.
