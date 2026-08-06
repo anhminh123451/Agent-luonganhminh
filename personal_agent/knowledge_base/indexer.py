@@ -101,14 +101,14 @@ class IndexStatus:
         last_hash: Hash của lần index gần nhất.
         current_hash: Hash hiện tại của raw data.
         needs_reindex: True nếu data đã thay đổi so với lần index trước.
-        domains: Danh sách domain đã index.
+        users: Danh sách user_id đã index.
     """
     is_indexed: bool = False
     document_count: int = 0
     last_hash: str = ""
     current_hash: str = ""
     needs_reindex: bool = True
-    domains: list[str] = field(default_factory=list)
+    users: list[str] = field(default_factory=list)
 
     def __str__(self) -> str:
         status = "INDEXED" if self.is_indexed else "NOT INDEXED"
@@ -116,7 +116,7 @@ class IndexStatus:
         return (
             f"IndexStatus: {status}{reindex} — "
             f"{self.document_count} documents, "
-            f"domains={self.domains}"
+            f"users={self.users}"
         )
 
 
@@ -238,6 +238,7 @@ class BaseIndexingStrategy(ABC):
     @abstractmethod
     def execute(
         self,
+        user_id: str,
         loader,
         embedder,
         vector_store,
@@ -285,6 +286,7 @@ class FullReindexStrategy(BaseIndexingStrategy):
 
     def execute(
         self,
+        user_id: str,
         loader,
         embedder,
         vector_store,
@@ -312,7 +314,11 @@ class FullReindexStrategy(BaseIndexingStrategy):
             # ── Step 3: Chuẩn bị data cho vector store ──
             ids = [doc.doc_id for doc in documents]
             contents = [doc.content for doc in documents]
-            metadatas = [doc.metadata for doc in documents]
+            metadatas = []
+            for doc in documents:
+                meta = doc.metadata.copy() if doc.metadata else {}
+                meta["user_id"] = user_id
+                metadatas.append(meta)
 
             # Track file sources
             files_processed = sorted(set(
@@ -365,7 +371,7 @@ class FullReindexStrategy(BaseIndexingStrategy):
             )
 
         except KnowledgeBaseError:
-            # Re-raise domain exceptions — không wrap lại
+            # Re-raise vector store exceptions — không wrap lại
             raise
         except Exception as e:
             duration = time.time() - start_time
@@ -415,6 +421,7 @@ class IncrementalIndexStrategy(BaseIndexingStrategy):
 
     def execute(
         self,
+        user_id: str,
         loader,
         embedder,
         vector_store,
@@ -482,7 +489,11 @@ class IncrementalIndexStrategy(BaseIndexingStrategy):
 
                     ids = [doc.doc_id for doc in docs]
                     contents = [doc.content for doc in docs]
-                    metadatas = [doc.metadata for doc in docs]
+                    metadatas = []
+                    for doc in docs:
+                        meta = doc.metadata.copy() if doc.metadata else {}
+                        meta["user_id"] = user_id
+                        metadatas.append(meta)
 
                     logger.info(
                         f"[Incremental] Embedding {len(docs)} documents "
@@ -676,6 +687,7 @@ class SmartIndexStrategy(BaseIndexingStrategy):
 
     def execute(
         self,
+        user_id: str,
         loader,
         embedder,
         vector_store,
@@ -721,6 +733,7 @@ class SmartIndexStrategy(BaseIndexingStrategy):
                     "forcing full reindex"
                 )
                 return self._full_reindex.execute(
+                    user_id=user_id,
                     loader=loader,
                     embedder=embedder,
                     vector_store=vector_store,
@@ -739,6 +752,7 @@ class SmartIndexStrategy(BaseIndexingStrategy):
                 f"running incremental index"
             )
             return self._incremental.execute(
+                user_id=user_id,
                 loader=loader,
                 embedder=embedder,
                 vector_store=vector_store,
@@ -751,6 +765,7 @@ class SmartIndexStrategy(BaseIndexingStrategy):
                 "running full reindex for initial index"
             )
             return self._full_reindex.execute(
+                user_id=user_id,
                 loader=loader,
                 embedder=embedder,
                 vector_store=vector_store,
@@ -791,15 +806,18 @@ class Indexer:
 
     def __init__(
         self,
+        user_id: str,
         data_dir: str | Path | None = None,
         strategy: BaseIndexingStrategy | None = None,
         embedder_provider: str | None = None,
-        vector_store_backend: str | None = None,
     ):
+        self.user_id = user_id
+        if self.user_id is None:
+            return "Thiếu User_id"
         # ── Data directory ──
         if data_dir is None:
             # Mặc định: data/raw relative to personal_agent/
-            self._data_dir = Path("data/raw/faq_bank")
+            self._data_dir = Path("data/raw")
         else:
             self._data_dir = Path(data_dir)
 
@@ -808,7 +826,6 @@ class Indexer:
 
         # ── Lazy-init dependencies ──
         self._embedder_provider = embedder_provider
-        self._vector_store_backend = vector_store_backend
         self._loader = None
         self._embedder = None
         self._vector_store = None
@@ -824,7 +841,7 @@ class Indexer:
     def _get_loader(self):
         """Lazy-init DataLoader."""
         if self._loader is None:
-            from knowledge_base.loader import DataLoader
+            from knowledge_base.documents_loader import DataLoader
             self._loader = DataLoader(data_dir=self._data_dir)
             logger.debug(f"DataLoader initialized: data_dir={self._data_dir}")
         return self._loader
@@ -843,7 +860,7 @@ class Indexer:
         """Lazy-init VectorStore."""
         if self._vector_store is None:
             from knowledge_base.vector_store import VectorStore
-            self._vector_store = VectorStore(backend=self._vector_store_backend)
+            self._vector_store = VectorStore()
             logger.debug(
                 f"VectorStore initialized: "
                 f"collection={self._vector_store.collection_name}"
@@ -881,6 +898,7 @@ class Indexer:
         )
 
         result = active_strategy.execute(
+            user_id=self.user_id,
             loader=self._get_loader(),
             embedder=self._get_embedder(),
             vector_store=self._get_vector_store(),
@@ -908,11 +926,11 @@ class Indexer:
             store = self._get_vector_store()
             doc_count = store.count()
 
-            # Lấy domains (nếu backend hỗ trợ)
+            # Lấy users (nếu backend hỗ trợ)
             try:
-                domains = store.get_domains()
+                users = store.get_users()
             except Exception:
-                domains = []
+                users = []
 
             # Hash hiện tại vs hash lần index trước
             loader = self._get_loader()
@@ -931,7 +949,7 @@ class Indexer:
                 last_hash=previous_hash,
                 current_hash=current_hash,
                 needs_reindex=needs_reindex,
-                domains=domains,
+                users=users,
             )
 
         except Exception as e:

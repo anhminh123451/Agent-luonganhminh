@@ -604,19 +604,13 @@ def _register_default_tools() -> None:
     # Khi hoàn thiện các tool files (faq_tool.py, branch_tool.py, ...),
     # uncomment các block tương ứng bên dưới.
 
-    # --- FAQ Search Tool ---
-    try:
-        from tools.faq_tool import FAQTool
-        ToolRegistry.register(FAQTool())
-    except Exception as e:
-        logger.warning(f"Failed to register FAQTool: {e}")
 
-    # --- Branch Search Tool ---
+    # --- Document Search Tool ---
     try:
-        from tools.branch_tool import BranchSearchTool
-        ToolRegistry.register(BranchSearchTool())
+        from tools.document_search_tool import DocumentSearchTool
+        ToolRegistry.register(DocumentSearchTool())
     except Exception as e:
-        logger.warning(f"Failed to register BranchSearchTool: {e}")
+        logger.warning(f"Failed to register DocumentSearchTool: {e}")
 
     # --- Web Search Tool ---
     try:

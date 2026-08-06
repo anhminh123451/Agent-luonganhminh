@@ -136,7 +136,7 @@ class ToolArgsSchema(BaseModel):
         class FAQArgs(ToolArgsSchema):
             query: str
             n_results: int = 3
-            domain: str = "banking_faq"
+            user_id: str = "user_123"
 
         class BranchSearchArgs(ToolArgsSchema):
             latitude: float

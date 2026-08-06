@@ -338,6 +338,25 @@ class APIError(BankingAgentError):
         super().__init__(message, details)
 
 
+class UnauthorizedError(APIError):
+    """
+    Lỗi xác thực (Authentication) — HTTP 401.
+
+    Raise khi:
+    - JWT token không hợp lệ, đã hết hạn hoặc bị thiếu
+    - Token không chứa claim ``sub``
+    - Sai mật khẩu khi đăng nhập
+
+    Ví dụ:
+        raise UnauthorizedError(
+            detail="Token không hợp lệ hoặc đã hết hạn."
+        )
+    """
+
+    def __init__(self, detail: str = "Unauthorized", details: dict | None = None):
+        super().__init__(message=detail, status_code=401, details=details)
+
+
 class InvalidRequestError(APIError):
     """
     Request từ client không hợp lệ.

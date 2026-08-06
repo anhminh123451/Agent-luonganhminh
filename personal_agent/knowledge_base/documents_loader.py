@@ -1,33 +1,39 @@
 """
-Data Loader cho Banking AI Agent — Knowledge Base.
+Data Loader cho Personal AI Agent — Knowledge Base.
 
-Module này chịu trách nhiệm load và preprocess dữ liệu nguồn từ thư mục data/raw/
+Module này chịu trách nhiệm load và preprocess dữ liệu nguồn từ thư mục data/
 để đưa vào pipeline RAG (embed → store → retrieve).
 
 Kiến trúc: Strategy Pattern + Registry
-    - Mỗi loại file (CSV, MD, ...) có một loader class riêng
-    - Tất cả loader được đăng ký vào LoaderRegistry
+    - Mỗi loại file (CSV, MD, PDF, DOCX) có một loader class riêng
+    - Tất cả loader được tự động đăng ký vào LoaderRegistry khi import module
     - DataLoader là facade chính, tự detect file type và gọi đúng loader
 
-Cách mở rộng khi thêm file type mới (ví dụ: Markdown):
-    1. Tạo class MarkdownLoader(BaseFileLoader)
-    2. Implement load() method
-    3. Đăng ký: LoaderRegistry.register(".md", MarkdownLoader)
-    → Done! DataLoader sẽ tự nhận dạng file .md
+Cách mở rộng khi thêm file type mới:
+    1. Tạo class NewLoader(BaseFileLoader)
+    2. Implement load() method và set supported_extensions
+    3. Thêm auto-register ở cuối section ĐĂNG KÝ CÁC LOADER MẶC ĐỊNH
+    → Done! DataLoader sẽ tự nhận dạng file type mới
+
+Các loader hiện có:
+    - CSVLoader:      .csv
+    - MarkdownLoader: .md
+    - PDFLoader:      .pdf  (sử dụng PyMuPDF)
+    - DOCXLoader:     .docx (sử dụng python-docx)
 
 Cách sử dụng:
-    from knowledge_base.loader import DataLoader
+    from knowledge_base.documents_loader import DataLoader
 
     loader = DataLoader()
 
     # Load một file cụ thể
-    docs = loader.load_file("data/raw/BankFAQs.csv")
+    docs = loader.load_file("report.pdf")
 
-    # Load toàn bộ thư mục raw
-    all_docs = loader.load_directory("data/raw")
+    # Load toàn bộ thư mục
+    all_docs = loader.load_all()
 
     # Kiểm tra data có thay đổi không (dùng cho indexer)
-    current_hash = loader.compute_hash("data/raw/BankFAQs.csv")
+    current_hash = loader.compute_hash("report.pdf")
 """
 
 from __future__ import annotations
@@ -43,6 +49,8 @@ from core.exceptions import DataLoadError
 from core.logger import get_logger
 
 logger = get_logger(__name__)
+CHUNK_SIZE=1200 
+CHUNK_OVERLAP=200
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -140,12 +148,16 @@ class CSVLoader(BaseFileLoader):
         required_columns: list[str] | None = None,
         id_prefix: str = "doc",
         encoding: str = "utf-8-sig",
+        chunk_size: int = CHUNK_SIZE,
+        chunk_overlap: int = CHUNK_OVERLAP,
     ):
         self.combine_columns = combine_columns
         self.separator = separator
         self.required_columns = required_columns or []
         self.id_prefix = id_prefix
         self.encoding = encoding
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
 
     def load(self, file_path: Path) -> list[Document]:
         """
@@ -171,6 +183,15 @@ class CSVLoader(BaseFileLoader):
         logger.info(f"Loading CSV: {file_path.name}")
 
         try:
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+        except ImportError as e:
+            raise DataLoadError(
+                "langchain-text-splitters is required to load and chunk CSV files. "
+                "Install it with: pip install langchain-text-splitters",
+                details={"file": str(file_path), "error": str(e)},
+            )
+
+        try:
             with open(file_path, mode="r", encoding=self.encoding, newline="") as f:
                 reader = csv.DictReader(f)
 
@@ -187,11 +208,19 @@ class CSVLoader(BaseFileLoader):
                 # --- Xác định columns dùng cho content ---
                 content_columns = self.combine_columns or actual_columns
 
+                # --- Khởi tạo splitter ---
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=self.chunk_size,
+                    chunk_overlap=self.chunk_overlap,
+                    length_function=len,
+                    is_separator_regex=False,
+                )
+
                 # --- Parse rows ---
                 documents: list[Document] = []
                 skipped = 0
 
-                for idx, row in enumerate(reader):
+                for row_idx, row in enumerate(reader):
                     # Tạo content bằng cách nối các cột
                     parts = []
                     for col in content_columns:
@@ -199,29 +228,37 @@ class CSVLoader(BaseFileLoader):
                         if value:
                             parts.append(value)
 
-                    content = self.separator.join(parts)
+                    row_content = self.separator.join(parts)
 
                     # Bỏ qua row rỗng
-                    if not content.strip():
+                    if not row_content.strip():
                         skipped += 1
                         continue
 
-                    # Dùng content-hash thay vì sequential index
-                    # → tránh trùng ID khi add nhiều lần hoặc add thêm file mới
-                    hash_input = f"{file_path.name}::row_{idx}::{content}"
-                    content_hash = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
-                    doc_id = f"{self.id_prefix}_{content_hash}"
-                    metadata = {
-                        "source_file": file_path.name,
-                        "row_index": idx,
-                        **{k: (v or "").strip() for k, v in row.items()},
-                    }
+                    # Chia chunk cho content của row này
+                    chunks = text_splitter.split_text(row_content)
 
-                    documents.append(Document(
-                        doc_id=doc_id,
-                        content=content,
-                        metadata=metadata,
-                    ))
+                    for chunk_idx, chunk in enumerate(chunks):
+                        content = chunk.strip()
+                        if not content:
+                            continue
+
+                        # Dùng content-hash thay vì sequential index
+                        hash_input = f"{file_path.name}::row_{row_idx}::chunk_{chunk_idx}::{content}"
+                        content_hash = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
+                        doc_id = f"{self.id_prefix}_{content_hash}"
+                        metadata = {
+                            "source_file": file_path.name,
+                            "row_index": row_idx,
+                            "chunk_index": chunk_idx,
+                            **{k: (v or "").strip() for k, v in row.items()},
+                        }
+    
+                        documents.append(Document(
+                            doc_id=doc_id,
+                            content=content,
+                            metadata=metadata,
+                        ))
 
                 # --- Log kết quả ---
                 if skipped > 0:
@@ -234,7 +271,6 @@ class CSVLoader(BaseFileLoader):
                         "CSV file produced no documents after preprocessing",
                         details={
                             "file": str(file_path),
-                            "total_rows_read": idx + 1 if 'idx' in dir() else 0,
                             "skipped": skipped,
                         },
                     )
@@ -326,6 +362,211 @@ class MarkdownLoader(BaseFileLoader):
         logger.info(f"Loaded {len(documents)} documents from {file_path.name}")
         return documents
 
+# ═══════════════════════════════════════════════════════════════════════
+# PDF LOADER — Load file PDF (sử dụng PyMuPDF)
+# ═══════════════════════════════════════════════════════════════════════
+
+class PDFLoader(BaseFileLoader):
+    """
+    Loader cho file PDF sử dụng PyMuPDF (fitz) và RecursiveCharacterTextSplitter.
+
+    Trích xuất text từ từng trang PDF, sau đó sử dụng text splitter
+    để chia nhỏ nội dung thành các chunk có kích thước cố định và overlap.
+
+    Args:
+        id_prefix: Prefix cho doc_id (mặc định: "pdf").
+        chunk_size: Kích thước tối đa của mỗi chunk (mặc định: 1000 ký tự).
+        chunk_overlap: Số ký tự gối lên nhau giữa các chunk (mặc định: 200).
+    """
+
+    supported_extensions: ClassVar[list[str]] = [".pdf"]
+
+    def __init__(self, id_prefix: str = "pdf", chunk_size: int = 1000, chunk_overlap: int = 200):
+        self.id_prefix = id_prefix
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def load(self, file_path: Path) -> list[Document]:
+        file_path = Path(file_path)
+        self._validate_file_exists(file_path)
+
+        logger.info(f"Loading PDF: {file_path.name} with chunk_size={self.chunk_size}")
+
+        try:
+            import fitz  # PyMuPDF
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+        except ImportError as e:
+            raise DataLoadError(
+                "PyMuPDF and langchain-text-splitters are required to load PDF files. "
+                "Install them with: pip install PyMuPDF langchain-text-splitters",
+                details={"file": str(file_path), "error": str(e)},
+            )
+
+        try:
+            doc = fitz.open(file_path)
+            documents: list[Document] = []
+            
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap,
+                length_function=len,
+                is_separator_regex=False,
+            )
+
+            full_text = ""
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                text = page.get_text().strip()
+                if text:
+                    full_text += text + "\n\n"
+
+            # Chia text của toàn bộ file thành các chunk
+            chunks = text_splitter.split_text(full_text)
+            
+            for idx, chunk in enumerate(chunks):
+                content = chunk.strip()
+                if not content:
+                    continue
+                    
+                # Dùng content-hash cho doc_id
+                hash_input = f"{file_path.name}::chunk_{idx}::{content}"
+                content_hash = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
+                doc_id = f"{self.id_prefix}_{content_hash}"
+
+                documents.append(Document(
+                    doc_id=doc_id,
+                    content=content,
+                    metadata={
+                        "source_file": file_path.name,
+                        "total_pages": len(doc),
+                        "chunk_index": idx,
+                    },
+                ))
+
+            doc.close()
+
+            if not documents:
+                raise DataLoadError(
+                    "PDF file produced no documents (no extractable text)",
+                    details={"file": str(file_path)},
+                )
+
+            logger.info(
+                f"Loaded {len(documents)} chunks from {file_path.name}"
+            )
+            return documents
+
+        except DataLoadError:
+            raise
+        except Exception as e:
+            raise DataLoadError(
+                f"Error reading PDF file: {file_path.name}",
+                details={"file": str(file_path), "error": str(e)},
+            ) from e
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DOCX LOADER — Load file DOCX (sử dụng python-docx)
+# ═══════════════════════════════════════════════════════════════════════
+
+class DOCXLoader(BaseFileLoader):
+    """
+    Loader cho file Word DOCX sử dụng python-docx.
+
+    Trích xuất text từ tất cả paragraph trong file DOCX.
+    Gộp toàn bộ paragraph thành một Document duy nhất cho mỗi file.
+
+    Args:
+        id_prefix: Prefix cho doc_id (mặc định: "docx").
+    """
+
+    supported_extensions: ClassVar[list[str]] = [".docx"]
+
+    def __init__(self, id_prefix: str = "docx", chunk_size: int = CHUNK_SIZE, chunk_overlap: int = CHUNK_OVERLAP):
+        self.id_prefix = id_prefix
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
+
+    def load(self, file_path: Path) -> list[Document]:
+        file_path = Path(file_path)
+        self._validate_file_exists(file_path)
+
+        logger.info(f"Loading DOCX: {file_path.name}")
+
+        try:
+            from docx import Document as DocxDocument
+            from langchain_text_splitters import RecursiveCharacterTextSplitter
+        except ImportError as e:
+            raise DataLoadError(
+                "python-docx and langchain-text-splitters are required. "
+                "Install them with: pip install python-docx langchain-text-splitters",
+                details={"file": str(file_path), "error": str(e)},
+            )
+
+        try:
+            docx_doc = DocxDocument(file_path)
+
+            # Trích xuất text từ tất cả paragraph
+            paragraphs = [
+                para.text.strip()
+                for para in docx_doc.paragraphs
+                if para.text.strip()
+            ]
+
+            if not paragraphs:
+                raise DataLoadError(
+                    "DOCX file produced no documents (no text content)",
+                    details={"file": str(file_path)},
+                )
+
+            full_text = "\n\n".join(paragraphs)
+
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=self.chunk_size,
+                chunk_overlap=self.chunk_overlap,
+                length_function=len,
+                is_separator_regex=False,
+            )
+
+            chunks = text_splitter.split_text(full_text)
+            
+            documents = []
+            for idx, chunk in enumerate(chunks):
+                content = chunk.strip()
+                if not content:
+                    continue
+                    
+                # Dùng content-hash cho doc_id
+                hash_input = f"{file_path.name}::chunk_{idx}::{content}"
+                content_hash = hashlib.md5(hash_input.encode("utf-8")).hexdigest()[:12]
+                doc_id = f"{self.id_prefix}_{content_hash}"
+
+                documents.append(Document(
+                    doc_id=doc_id,
+                    content=content,
+                    metadata={
+                        "source_file": file_path.name,
+                        "total_paragraphs": len(paragraphs),
+                        "chunk_index": idx,
+                        
+                    },
+                ))
+
+            logger.info(
+                f"Loaded {len(documents)} chunks from {file_path.name} "
+                f"({len(paragraphs)} paragraphs)"
+            )
+            return documents
+
+        except DataLoadError:
+            raise
+        except Exception as e:
+            raise DataLoadError(
+                f"Error reading DOCX file: {file_path.name}",
+                details={"file": str(file_path), "error": str(e)},
+            ) from e
+
+
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -392,32 +633,31 @@ class LoaderRegistry:
 
 # ═══════════════════════════════════════════════════════════════════════
 # ĐĂNG KÝ CÁC LOADER MẶC ĐỊNH
+# Tự động đăng ký tất cả loader khi module được import.
 # ═══════════════════════════════════════════════════════════════════════
 
-# --- FAQ Loader: nối Question + Answer + Class thành content ---
-_faq_loader = CSVLoader(
-    combine_columns=["Question", "Answer", "Class"],
-    separator=" | ",
-    required_columns=["Question", "Answer", "Class"],
-    id_prefix="faq",
-)
+def _auto_register_loaders() -> None:
+    """
+    Tự động đăng ký tất cả loader đã định nghĩa vào LoaderRegistry.
 
-# --- Branch Loader: giữ nguyên tất cả cột, content = branch_name + branch_address ---
-_branch_loader = CSVLoader(
-    combine_columns=["branch_name", "branch_address"],
-    separator=" — ",
-    required_columns=["branch_name", "branch_address", "lattitude", "longtitude"],
-    id_prefix="branch",
-)
+    Mỗi loader class khai báo `supported_extensions` — hàm này duyệt qua
+    tất cả loader và đăng ký từng extension tương ứng.
+    """
+    default_loaders: list[BaseFileLoader] = [
+        CSVLoader(),
+        MarkdownLoader(),
+        PDFLoader(),
+        DOCXLoader(),
+    ]
 
-# Đăng ký vào registry với tên gợi nhớ (dùng cho DataLoader.load_file)
-LoaderRegistry.register(".csv", _faq_loader)
+    for loader in default_loaders:
+        for ext in loader.supported_extensions:
+            LoaderRegistry.register(ext, loader)
 
-# Lưu mapping tên file → loader riêng (để DataLoader tự chọn đúng loader)
-_FILE_SPECIFIC_LOADERS: dict[str, BaseFileLoader] = {
-    "BankFAQs.csv": _faq_loader,
-    "branch_info.csv": _branch_loader,
-}
+
+# Chạy auto-register khi module được import
+_auto_register_loaders()
+
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -451,12 +691,11 @@ class DataLoader:
         """
         Load một file cụ thể từ data_dir.
 
-        Quy trình chọn loader:
-            1. Kiểm tra file-specific loader (ví dụ: BankFAQs.csv → _faq_loader)
-            2. Fallback: chọn loader theo extension từ registry
+        Tự động chọn loader phù hợp dựa trên file extension
+        thông qua LoaderRegistry.
 
         Args:
-            filename: Tên file (ví dụ: "BankFAQs.csv").
+            filename: Tên file (ví dụ: "report.pdf", "notes.md").
 
         Returns:
             list[Document]: Danh sách document từ file.
@@ -466,13 +705,9 @@ class DataLoader:
         """
         file_path = self.data_dir / filename
 
-        # Ưu tiên file-specific loader
-        loader = _FILE_SPECIFIC_LOADERS.get(filename)
-
-        # Fallback theo extension
-        if loader is None:
-            ext = file_path.suffix.lower()
-            loader = LoaderRegistry.get_loader(ext)
+        # Chọn loader theo extension từ registry
+        ext = file_path.suffix.lower()
+        loader = LoaderRegistry.get_loader(ext)
 
         if loader is None:
             supported = LoaderRegistry.supported_extensions()
@@ -521,11 +756,7 @@ class DataLoader:
 
             filename = file_path.name
 
-            # Kiểm tra có loader cho file này không
-            has_specific = filename in _FILE_SPECIFIC_LOADERS
-            has_generic = LoaderRegistry.is_supported(file_path.suffix.lower())
-
-            if not has_specific and not has_generic:
+            if not LoaderRegistry.is_supported(file_path.suffix.lower()):
                 skipped_files.append(filename)
                 continue
 

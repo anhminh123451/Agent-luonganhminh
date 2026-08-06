@@ -1,55 +1,40 @@
 """
-Vector Store cho Banking AI Agent — Knowledge Base.
+Vector Store cho Personal AI Agent — Knowledge Base.
 
 Module này quản lý ChromaDB persistent vector database,
 phục vụ lưu trữ và truy vấn document embeddings trong pipeline RAG.
 
-Kiến trúc: Strategy Pattern + Repository Pattern
-    - BaseVectorStore: Interface chung cho mọi vector store backend
-    - ChromaVectorStore: Implementation cụ thể dùng ChromaDB persistent client
-    - VectorStoreRegistry: Quản lý mapping backend_name → store instance
-    - VectorStore: Facade chính, tự chọn đúng backend
-
-Domain Filtering:
-    Mỗi document khi add vào sẽ có metadata "domain" (ví dụ: "banking_faq",
-    "branch_info", "insurance", ...) để agent có thể filter theo lĩnh vực.
-
-Cách mở rộng khi thêm backend mới (ví dụ: Pinecone):
-    1. Tạo class PineconeVectorStore(BaseVectorStore)
-    2. Implement tất cả abstract methods
-    3. Đăng ký: VectorStoreRegistry.register("pinecone", PineconeVectorStore(...))
-    → Done! VectorStore facade sẽ tự nhận dạng backend
+User Filtering:
+    Mỗi document khi add vào sẽ bắt buộc có metadata "user_id"
+    để agent có thể filter tài liệu cá nhân của từng user.
 
 Cách sử dụng:
     from knowledge_base.vector_store import VectorStore
 
-    store = VectorStore()  # Mặc định: ChromaDB
+    store = VectorStore()  # Sử dụng duy nhất ChromaDB
 
-    # Thêm documents với domain metadata
+    # Thêm documents với user_id metadata
     store.add_documents(
         ids=["faq_001", "faq_002"],
         documents=["What is savings?", "How to open account?"],
-        metadatas=[{"domain": "banking_faq"}, {"domain": "banking_faq"}],
+        metadatas=[{"user_id": "user_123"}, {"user_id": "user_123"}],
     )
 
-    # Query tất cả domains
-    results = store.query("savings account", n_results=3)
-
-    # Query chỉ trong domain cụ thể
-    results = store.query("savings account", n_results=3, domain="banking_faq")
+    # Query yêu cầu truyền user_id trong multi-tenant
+    results = store.query("savings account", n_results=3, user_id="user_123")
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
+import os
 from dataclasses import dataclass, field
 from typing import ClassVar
 
 from core.exceptions import VectorStoreError
 from core.logger import get_logger
+from core.config import settings
 
 logger = get_logger(__name__)
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # DATA MODEL — Kết quả truy vấn chuẩn
@@ -76,143 +61,13 @@ class QueryResult:
         """Kiểm tra kết quả có rỗng không."""
         return len(self.documents) == 0
 
-
 # ═══════════════════════════════════════════════════════════════════════
-# BASE VECTOR STORE — Interface chung cho mọi vector store backend
+# VECTOR STORE — ChromaDB Persistent Client
 # ═══════════════════════════════════════════════════════════════════════
 
-class BaseVectorStore(ABC):
+class VectorStore:
     """
-    Abstract base class cho tất cả vector store backend.
-
-    Mỗi subclass cần implement:
-        - add_documents(): Thêm documents vào store
-        - query(): Truy vấn documents tương tự
-        - delete_documents(): Xóa documents theo ID
-        - count(): Đếm số documents trong store
-        - reset(): Xóa toàn bộ dữ liệu
-        - collection_name: Tên collection hiện tại
-    """
-
-    @property
-    @abstractmethod
-    def collection_name(self) -> str:
-        """Tên collection/index đang sử dụng."""
-        ...
-
-    @abstractmethod
-    def add_documents(
-        self,
-        ids: list[str],
-        documents: list[str],
-        metadatas: list[dict] | None = None,
-        embeddings: list[list[float]] | None = None,
-    ) -> None:
-        """
-        Thêm documents vào vector store.
-
-        Args:
-            ids: Danh sách ID duy nhất cho mỗi document.
-            documents: Danh sách nội dung text.
-            metadatas: Metadata cho mỗi document (bao gồm "domain").
-            embeddings: Vector embeddings (nếu None, store tự embed).
-
-        Raises:
-            VectorStoreError: Khi thêm thất bại.
-        """
-        ...
-
-    @abstractmethod
-    def query(
-        self,
-        query_text: str | None = None,
-        query_embedding: list[float] | None = None,
-        n_results: int = 5,
-        domain: str | None = None,
-        where_filter: dict | None = None,
-    ) -> QueryResult:
-        """
-        Truy vấn documents tương tự.
-
-        Args:
-            query_text: Text truy vấn (dùng default embedding của store).
-            query_embedding: Vector embedding truy vấn (ưu tiên hơn query_text).
-            n_results: Số kết quả trả về.
-            domain: Filter theo domain cụ thể.
-            where_filter: Filter metadata tùy chỉnh (ChromaDB where clause).
-
-        Returns:
-            QueryResult chứa documents, metadatas, distances.
-
-        Raises:
-            VectorStoreError: Khi truy vấn thất bại.
-        """
-        ...
-
-    @abstractmethod
-    def delete_documents(self, ids: list[str]) -> None:
-        """
-        Xóa documents theo ID.
-
-        Args:
-            ids: Danh sách ID cần xóa.
-
-        Raises:
-            VectorStoreError: Khi xóa thất bại.
-        """
-        ...
-
-    @abstractmethod
-    def count(self) -> int:
-        """Đếm tổng số documents trong collection."""
-        ...
-
-    @abstractmethod
-    def reset(self) -> None:
-        """Xóa toàn bộ dữ liệu trong collection (dùng cho rebuild index)."""
-        ...
-
-    def _validate_add_inputs(
-        self,
-        ids: list[str],
-        documents: list[str],
-        metadatas: list[dict] | None,
-    ) -> None:
-        """Validate inputs trước khi add."""
-        if not ids:
-            raise VectorStoreError(
-                "IDs list is empty — nothing to add",
-                details={"ids_count": 0},
-            )
-
-        if len(ids) != len(documents):
-            raise VectorStoreError(
-                "IDs and documents must have the same length",
-                details={"ids_count": len(ids), "docs_count": len(documents)},
-            )
-
-        if metadatas is not None and len(metadatas) != len(ids):
-            raise VectorStoreError(
-                "Metadatas must have the same length as IDs",
-                details={"ids_count": len(ids), "metadatas_count": len(metadatas)},
-            )
-
-        # Kiểm tra ID trùng lặp
-        if len(set(ids)) != len(ids):
-            duplicates = [x for x in ids if ids.count(x) > 1]
-            raise VectorStoreError(
-                "Duplicate IDs detected",
-                details={"duplicates": list(set(duplicates))},
-            )
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# CHROMA VECTOR STORE — ChromaDB Persistent Client
-# ═══════════════════════════════════════════════════════════════════════
-
-class ChromaVectorStore(BaseVectorStore):
-    """
-    Vector store implementation sử dụng ChromaDB persistent client.
+    Vector store duy nhất sử dụng ChromaDB persistent client.
 
     Lưu dữ liệu xuống disk tại CHROMA_DB_PATH, không mất data khi restart.
 
@@ -228,6 +83,7 @@ class ChromaVectorStore(BaseVectorStore):
         self,
         db_path: str | None = None,
         collection_name: str | None = None,
+        
     ):
         self._db_path = db_path
         self._col_name = collection_name
@@ -247,15 +103,12 @@ class ChromaVectorStore(BaseVectorStore):
             ) from e
 
         # Lấy config values
-        if self._db_path is None or self._col_name is None:
-            from core.config import settings
-            if self._db_path is None:
-                self._db_path = settings.CHROMA_DB_PATH
-            if self._col_name is None:
-                self._col_name = settings.COLLECTION_NAME
+        if self._db_path is None:
+            self._db_path = settings.CHROMA_DB_PATH
+        if self._col_name is None:
+            self._col_name = settings.COLLECTION_NAME
 
         # Chuẩn hóa path: resolve relative → absolute, tránh lỗi Windows
-        import os
         self._db_path = os.path.abspath(self._db_path)
 
         # Kiểm tra: nếu đã tồn tại FILE (không phải thư mục) cùng tên → lỗi rõ ràng
@@ -277,7 +130,7 @@ class ChromaVectorStore(BaseVectorStore):
 
             doc_count = self._collection.count()
             logger.info(
-                f"ChromaVectorStore initialized: "
+                f"VectorStore (ChromaDB) initialized: "
                 f"path={self._db_path}, collection={self._col_name}, "
                 f"documents={doc_count}"
             )
@@ -296,6 +149,45 @@ class ChromaVectorStore(BaseVectorStore):
     def collection_name(self) -> str:
         return self._col_name
 
+    def _validate_add_inputs(
+        self,
+        ids: list[str],
+        documents: list[str],
+        metadatas: list[dict] | None,
+    ) -> None:
+        """Validate inputs trước khi add."""
+        if not ids:
+            raise VectorStoreError(
+                "IDs list is empty — nothing to add",
+                details={"ids_count": 0},
+            )
+
+        if len(ids) != len(documents):
+            raise VectorStoreError(
+                "IDs and documents must have the same length",
+                details={"ids_count": len(ids), "docs_count": len(documents)},
+            )
+
+        if metadatas is None or len(metadatas) != len(ids):
+            raise VectorStoreError(
+                "Metadatas must be provided and have the same length as IDs",
+                details={"ids_count": len(ids), "metadatas_count": len(metadatas) if metadatas else 0},
+            )
+
+        for i, meta in enumerate(metadatas):
+            if "user_id" not in meta:
+                raise VectorStoreError(
+                    f"Metadata at index {i} is missing required 'user_id' key",
+                )
+
+        # Kiểm tra ID trùng lặp
+        if len(set(ids)) != len(ids):
+            duplicates = [x for x in ids if ids.count(x) > 1]
+            raise VectorStoreError(
+                "Duplicate IDs detected",
+                details={"duplicates": list(set(duplicates))},
+            )
+
     def add_documents(
         self,
         ids: list[str],
@@ -312,7 +204,7 @@ class ChromaVectorStore(BaseVectorStore):
         Args:
             ids: Danh sách ID duy nhất.
             documents: Danh sách nội dung text.
-            metadatas: Metadata (nên chứa key "domain").
+            metadatas: Metadata (bắt buộc chứa key "user_id").
             embeddings: Pre-computed embeddings (nếu None, ChromaDB tự embed).
         """
         self._validate_add_inputs(ids, documents, metadatas)
@@ -374,24 +266,24 @@ class ChromaVectorStore(BaseVectorStore):
 
     def query(
         self,
+        user_id: str,
         query_text: str | None = None,
         query_embedding: list[float] | None = None,
         n_results: int = 5,
-        domain: str | None = None,
         where_filter: dict | None = None,
     ) -> QueryResult:
         """
         Truy vấn documents tương tự từ ChromaDB.
 
-        Hỗ trợ filter theo domain hoặc where_filter tùy chỉnh.
-        Nếu cả domain và where_filter được cung cấp, domain sẽ được
+        Hỗ trợ filter theo user_id hoặc where_filter tùy chỉnh.
+        Nếu cả user_id và where_filter được cung cấp, user_id sẽ được
         merge vào where_filter bằng $and.
 
         Args:
+            user_id: Filter theo ID người dùng (bắt buộc).
             query_text: Text truy vấn.
             query_embedding: Vector embedding truy vấn (ưu tiên hơn).
             n_results: Số kết quả trả về.
-            domain: Filter theo domain (ví dụ: "banking_faq").
             where_filter: Filter metadata tùy chỉnh.
 
         Returns:
@@ -413,7 +305,7 @@ class ChromaVectorStore(BaseVectorStore):
         actual_n = min(n_results, self._collection.count())
 
         # Build where clause
-        combined_where = self._build_where_clause(domain, where_filter)
+        combined_where = self._build_where_clause(user_id, where_filter)
 
         try:
             kwargs = {"n_results": actual_n}
@@ -438,7 +330,7 @@ class ChromaVectorStore(BaseVectorStore):
             logger.debug(
                 f"Query returned {len(result.documents)} results "
                 f"from '{self._col_name}'"
-                + (f" (domain={domain})" if domain else "")
+                + f" (user_id={user_id})"
             )
             return result
 
@@ -450,7 +342,7 @@ class ChromaVectorStore(BaseVectorStore):
                 details={
                     "collection": self._col_name,
                     "n_results": n_results,
-                    "domain": domain,
+                    "user_id": user_id,
                     "error": str(e),
                 },
             ) from e
@@ -506,12 +398,12 @@ class ChromaVectorStore(BaseVectorStore):
                 details={"error": str(e)},
             ) from e
 
-    def get_domains(self) -> list[str]:
+    def get_users(self) -> list[str]:
         """
-        Lấy danh sách tất cả domain đã được lưu trong collection.
+        Lấy danh sách tất cả user_id đã được lưu trong collection.
 
         Returns:
-            Danh sách domain duy nhất.
+            Danh sách user_id duy nhất.
         """
         try:
             total = self._collection.count()
@@ -519,16 +411,16 @@ class ChromaVectorStore(BaseVectorStore):
                 return []
 
             results = self._collection.get(include=["metadatas"])
-            domains = set()
+            users = set()
             for meta in results.get("metadatas", []):
-                if meta and "domain" in meta:
-                    domains.add(meta["domain"])
+                if meta and "user_id" in meta:
+                    users.add(meta["user_id"])
 
-            return sorted(domains)
+            return sorted(users)
 
         except Exception as e:
             raise VectorStoreError(
-                "Failed to retrieve domains",
+                "Failed to retrieve users",
                 details={"error": str(e)},
             ) from e
 
@@ -561,291 +453,40 @@ class ChromaVectorStore(BaseVectorStore):
                 details={"source_file": source_file, "error": str(e)},
             ) from e
 
-    def count_by_domain(self, domain: str) -> int:
+    def count_by_user(self, user_id: str) -> int:
         """
-        Đếm số documents trong một domain cụ thể.
+        Đếm số documents của một user cụ thể.
 
         Args:
-            domain: Tên domain cần đếm.
+            user_id: ID người dùng cần đếm.
 
         Returns:
             Số lượng documents.
         """
         try:
             results = self._collection.get(
-                where={"domain": domain},
+                where={"user_id": user_id},
                 include=[],
             )
             return len(results["ids"])
         except Exception as e:
             raise VectorStoreError(
-                f"Failed to count documents for domain '{domain}'",
-                details={"domain": domain, "error": str(e)},
+                f"Failed to count documents for user '{user_id}'",
+                details={"user_id": user_id, "error": str(e)},
             ) from e
 
     def _build_where_clause(
         self,
-        domain: str | None,
+        user_id: str,
         where_filter: dict | None,
-    ) -> dict | None:
+    ) -> dict:
         """
         Xây dựng where clause cho ChromaDB query.
 
-        Merge domain filter với where_filter tùy chỉnh nếu cả hai
-        được cung cấp.
+        Merge user_id filter với where_filter tùy chỉnh nếu có.
         """
-        domain_clause = {"domain": domain} if domain else None
+        user_clause = {"user_id": user_id}
 
-        if domain_clause and where_filter:
-            return {"$and": [domain_clause, where_filter]}
-        elif domain_clause:
-            return domain_clause
-        elif where_filter:
-            return where_filter
-        return None
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# VECTOR STORE REGISTRY — Đăng ký và quản lý backends
-# ═══════════════════════════════════════════════════════════════════════
-
-class VectorStoreRegistry:
-    """
-    Registry trung tâm quản lý mapping: backend_name → store instance.
-
-    Cách dùng:
-        VectorStoreRegistry.register("chroma", ChromaVectorStore(...))
-        store = VectorStoreRegistry.get("chroma")
-        backends = VectorStoreRegistry.available_backends()
-    """
-
-    _registry: ClassVar[dict[str, BaseVectorStore]] = {}
-    _default_backend: ClassVar[str | None] = None
-
-    @classmethod
-    def register(
-        cls,
-        name: str,
-        store: BaseVectorStore,
-        set_default: bool = False,
-    ) -> None:
-        """Đăng ký một vector store backend."""
-        key = name.lower()
-        cls._registry[key] = store
-
-        if set_default or cls._default_backend is None:
-            cls._default_backend = key
-
-        logger.debug(
-            f"Registered vector store '{key}': "
-            f"{store.__class__.__name__} "
-            f"(collection={store.collection_name})"
-        )
-
-    @classmethod
-    def get(cls, name: str | None = None) -> BaseVectorStore:
-        """
-        Lấy store theo tên backend.
-
-        Args:
-            name: Tên backend. Nếu None, trả về backend mặc định.
-
-        Raises:
-            VectorStoreError: Backend chưa được đăng ký.
-        """
-        if name is None:
-            name = cls._default_backend
-
-        if name is None:
-            raise VectorStoreError(
-                "No vector store backend registered. "
-                "Call VectorStoreRegistry.register() first or use VectorStore() "
-                "which auto-registers ChromaDB.",
-                details={"available": cls.available_backends()},
-            )
-
-        key = name.lower()
-        store = cls._registry.get(key)
-
-        if store is None:
-            raise VectorStoreError(
-                f"Vector store backend '{name}' not found",
-                details={
-                    "requested": name,
-                    "available": cls.available_backends(),
-                },
-            )
-
-        return store
-
-    @classmethod
-    def available_backends(cls) -> list[str]:
-        """Trả về danh sách tên backend đã đăng ký."""
-        return list(cls._registry.keys())
-
-    @classmethod
-    def clear(cls) -> None:
-        """Xóa toàn bộ registry (dùng cho testing)."""
-        cls._registry.clear()
-        cls._default_backend = None
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# ĐĂNG KÝ BACKEND MẶC ĐỊNH — ChromaDB
-# ═══════════════════════════════════════════════════════════════════════
-
-def _register_default_backends() -> None:
-    """
-    Đăng ký vector store backend mặc định.
-    Được gọi lazy — chỉ khi VectorStore facade cần mà chưa có backend nào.
-    """
-    if VectorStoreRegistry.available_backends():
-        return
-
-    try:
-        chroma_store = ChromaVectorStore()
-        VectorStoreRegistry.register("chroma", chroma_store, set_default=True)
-        logger.info("Default ChromaDB vector store registered successfully")
-    except VectorStoreError as e:
-        logger.error(
-            f"Failed to register default ChromaDB store: {e}. "
-            f"Register a backend manually via VectorStoreRegistry.register()"
-        )
-        raise
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# VECTOR STORE FACADE — API chính cho toàn bộ hệ thống
-# ═══════════════════════════════════════════════════════════════════════
-
-class VectorStore:
-    """
-    Facade chính để tương tác với vector database.
-
-    Tự động chọn đúng backend từ registry và cung cấp API đơn giản.
-    Nếu chưa có backend nào đăng ký, sẽ tự đăng ký ChromaDB mặc định.
-
-    Ví dụ:
-        store = VectorStore()
-
-        # Thêm documents với domain
-        store.add_documents(
-            ids=["faq_001"],
-            documents=["What is savings?"],
-            metadatas=[{"domain": "banking_faq", "source": "FAQ"}],
-        )
-
-        # Query tất cả
-        results = store.query("savings account", n_results=3)
-
-        # Query theo domain
-        results = store.query("savings", n_results=3, domain="banking_faq")
-
-        # Xem các domain hiện có
-        domains = store.get_domains()
-    """
-
-    def __init__(self, backend: str | None = None):
-        """
-        Args:
-            backend: Tên backend (ví dụ: "chroma").
-                     Nếu None, sử dụng backend mặc định.
-        """
-        _register_default_backends()
-
-        self._backend_name = backend
-        self._store = VectorStoreRegistry.get(backend)
-
-        logger.debug(
-            f"VectorStore facade initialized: "
-            f"backend={self._store.__class__.__name__}, "
-            f"collection={self._store.collection_name}"
-        )
-
-    @property
-    def collection_name(self) -> str:
-        """Tên collection đang sử dụng."""
-        return self._store.collection_name
-
-    def add_documents(
-        self,
-        ids: list[str],
-        documents: list[str],
-        metadatas: list[dict] | None = None,
-        embeddings: list[list[float]] | None = None,
-    ) -> None:
-        """
-        Thêm documents vào vector store.
-
-        Args:
-            ids: Danh sách ID duy nhất.
-            documents: Danh sách nội dung text.
-            metadatas: Metadata (nên chứa key "domain" để filter sau này).
-            embeddings: Pre-computed embeddings.
-        """
-        self._store.add_documents(ids, documents, metadatas, embeddings)
-
-    def query(
-        self,
-        query_text: str | None = None,
-        query_embedding: list[float] | None = None,
-        n_results: int = 5,
-        domain: str | None = None,
-        where_filter: dict | None = None,
-    ) -> QueryResult:
-        """
-        Truy vấn documents tương tự.
-
-        Args:
-            query_text: Text truy vấn.
-            query_embedding: Vector embedding truy vấn.
-            n_results: Số kết quả trả về.
-            domain: Filter theo domain cụ thể.
-            where_filter: Filter metadata tùy chỉnh.
-
-        Returns:
-            QueryResult chứa documents, metadatas, distances.
-        """
-        return self._store.query(
-            query_text=query_text,
-            query_embedding=query_embedding,
-            n_results=n_results,
-            domain=domain,
-            where_filter=where_filter,
-        )
-
-    def delete_documents(self, ids: list[str]) -> None:
-        """Xóa documents theo ID."""
-        self._store.delete_documents(ids)
-
-    def count(self) -> int:
-        """Đếm tổng số documents."""
-        return self._store.count()
-
-    def reset(self) -> None:
-        """Xóa toàn bộ collection và tạo lại."""
-        self._store.reset()
-
-    def get_domains(self) -> list[str]:
-        """Lấy danh sách tất cả domain đã lưu."""
-        if isinstance(self._store, ChromaVectorStore):
-            return self._store.get_domains()
-        raise VectorStoreError(
-            "get_domains() is not supported by the current backend",
-        )
-
-    def count_by_domain(self, domain: str) -> int:
-        """Đếm documents trong domain cụ thể."""
-        if isinstance(self._store, ChromaVectorStore):
-            return self._store.count_by_domain(domain)
-        raise VectorStoreError(
-            "count_by_domain() is not supported by the current backend",
-        )
-
-    def get_ids_by_source_file(self, source_file: str) -> list[str]:
-        """Lấy IDs của documents thuộc source file cụ thể."""
-        if isinstance(self._store, ChromaVectorStore):
-            return self._store.get_ids_by_source_file(source_file)
-        raise VectorStoreError(
-            "get_ids_by_source_file() is not supported by the current backend",
-        )
+        if where_filter:
+            return {"$and": [user_clause, where_filter]}
+        return user_clause

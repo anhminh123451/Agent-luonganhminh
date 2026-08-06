@@ -1,21 +1,11 @@
-from api.schemas import ChatRequest,ChatResponse
-from agent.graph import invoke_agent
-from tools.registry import setup_tools
-from agent.profiles import setup_profiles
-from fastapi import FastAPI
-from api.routes.chat import router as chat_router
-from api.routes.health import router as health_router
+import json
 
+from tools.document_search_tool import DocumentSearchTool
 
-app = FastAPI()
-setup_tools()
-setup_profiles(yaml_path="config/profiles.yaml")
-app.include_router(
-    chat_router
-)
-app.include_router(
-    health_router
-)
+tool = DocumentSearchTool()
+llm_res = '{"query": "DOC-011,3.1 Điều khoản Bảo mật Thông tin NDA (Khoản 1)", "user_id": "1", "n_results": 3, "extra_note": "LLM generated this"}'
 
-
-
+# Parse JSON string → dict, rồi truyền vào safe_run() dưới dạng **kwargs
+parsed_args = json.loads(llm_res)
+res = tool.run(**parsed_args)
+print(res.context)
