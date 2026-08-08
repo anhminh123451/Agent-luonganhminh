@@ -399,6 +399,7 @@ def reset_graph() -> None:
 
 def invoke_agent(
     query: str,
+    user_id: str,
     agent_profile: str = "personal_agent",
     session_id: str | None = None,
     max_steps: int | None = None,
@@ -410,6 +411,7 @@ def invoke_agent(
     checkpointer chưa:
         - Nếu ĐÃ CÓ: Tiếp tục hội thoại — chỉ gửi query mới
           + reset current_step để mỗi query có budget bước riêng.
+          + user_id đã được lưu từ lần đầu, không cần truyền lại.
         - Nếu CHƯA CÓ: Tạo initial_state() rồi invoke như mới.
 
     Graph tự động lưu state vào SQLite sau mỗi invoke nhờ
@@ -417,6 +419,7 @@ def invoke_agent(
 
     Args:
         query: Câu hỏi từ user.
+        user_id: ID người dùng (bắt buộc, dùng cho multi-tenant filtering).
         agent_profile: Tên agent profile (mặc định "personal_agent").
         session_id: ID session (optional, tự tạo nếu None).
                     Dùng làm thread_id cho checkpointer.
@@ -432,18 +435,20 @@ def invoke_agent(
             - error: Thông tin lỗi (nếu có)
 
     Raises:
-        ValueError: Khi query rỗng.
+        ValueError: Khi query hoặc user_id rỗng.
         GraphExecutionError: Khi graph execution thất bại.
 
     Ví dụ:
         # Lượt 1
         result1 = invoke_agent(
             "Tên tôi là Minh",
+            user_id="user_123",
             session_id="session-001",
         )
         # Lượt 2 — agent nhớ tên
         result2 = invoke_agent(
             "Tên tôi là gì?",
+            user_id="user_123",
             session_id="session-001",
         )
     """
@@ -511,6 +516,7 @@ def invoke_agent(
 
         input_state = create_initial_state(
             query=query,
+            user_id=user_id,
             agent_profile=agent_profile,
             session_id=resolved_session_id,
             max_steps=resolved_max_steps,

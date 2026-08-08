@@ -317,7 +317,7 @@ class FullReindexStrategy(BaseIndexingStrategy):
             metadatas = []
             for doc in documents:
                 meta = doc.metadata.copy() if doc.metadata else {}
-                meta["user_id"] = user_id
+                meta["user_id"] = str(user_id)
                 metadatas.append(meta)
 
             # Track file sources

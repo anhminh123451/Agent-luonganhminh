@@ -1,5 +1,5 @@
 """
-AgentState cho Banking AI Agent — Agent Core (Module 4).
+AgentState cho Personal AI Agent — Agent Core (Module 4).
 
 Module này định nghĩa AgentState TypedDict dùng làm state container
 cho LangGraph StateGraph, quản lý toàn bộ dữ liệu chảy qua agent loop.
@@ -21,6 +21,7 @@ State Fields:
     ┌─────────────────────────────────────────────────────────────┐
     │ INPUT                                                       │
     │   query            — Câu hỏi gốc từ user                   │
+    │   user_id          — ID người dùng (multi-tenant)           │
     │   session_id       — ID phiên hội thoại                     │
     │   agent_profile    — Profile agent (quyết định tools)       │
     ├─────────────────────────────────────────────────────────────┤
@@ -50,8 +51,9 @@ Cách sử dụng:
 
     # Khởi tạo state cho request mới
     state = create_initial_state(
-        query="Lãi suất tiết kiệm bao nhiêu?",
-        agent_profile="banking_agent",
+        query="Tìm thông tin trong tài liệu của tôi?",
+        user_id="user_123",
+        agent_profile="personal_agent",
     )
 
     # Sử dụng trong LangGraph node
@@ -182,7 +184,14 @@ class AgentState(TypedDict):
     query: str
     """Câu hỏi gốc từ user. Không thay đổi trong suốt agent loop."""
 
-
+    user_id: str
+    """
+    ID người dùng (multi-tenant). Dùng cho:
+    - Filter tài liệu trong VectorStore theo user
+    - Tiêm vào tool_args khi gọi DocumentSearchTool
+    - Đảm bảo data isolation giữa các users
+    Được set khi khởi tạo state và KHÔNG thay đổi trong suốt loop.
+    """
 
     session_id: str
     """
@@ -196,7 +205,7 @@ class AgentState(TypedDict):
     """
     Tên agent profile (từ ToolRegistry).
     Quyết định agent được phép dùng tool nào.
-    Ví dụ: "banking_agent", "general_agent".
+    Ví dụ: "personal_agent", "general_agent".
     """
 
     # ─── CONVERSATION HISTORY ─────────────────────────────────────────
@@ -302,6 +311,7 @@ class AgentState(TypedDict):
 
 def create_initial_state(
     query: str,
+    user_id: str,
     session_id: str | None = None,
     agent_profile: str = "personal_agent",
     max_steps: int | None = None,
@@ -314,8 +324,9 @@ def create_initial_state(
 
     Args:
         query: Câu hỏi từ user.
+        user_id: ID người dùng (bắt buộc, dùng cho multi-tenant filtering).
         session_id: ID session. Nếu None, tự tạo UUID mới.
-        agent_profile: Tên agent profile (mặc định "banking_agent").
+        agent_profile: Tên agent profile (mặc định "personal_agent").
         max_steps: Giới hạn bước. Nếu None, dùng settings.MAX_AGENT_STEPS.
 
     Returns:
@@ -323,11 +334,13 @@ def create_initial_state(
 
     Raises:
         ValueError: Khi query rỗng hoặc chỉ chứa whitespace.
+        ValueError: Khi user_id rỗng hoặc chỉ chứa whitespace.
 
     Ví dụ:
         state = create_initial_state(
-            query="Chi nhánh nào gần Hà Nội nhất?",
-            agent_profile="banking_agent",
+            query="Tìm thông tin trong tài liệu của tôi?",
+            user_id="user_123",
+            agent_profile="personal_agent",
         )
         result = graph.invoke(state)
     """
@@ -335,15 +348,25 @@ def create_initial_state(
     if not query or not query.strip():
         raise ValueError("Query không được rỗng. Vui lòng nhập câu hỏi.")
 
+    if not user_id or not str(user_id).strip():
+        raise ValueError(
+            "user_id không được rỗng. "
+            "user_id bắt buộc để đảm bảo multi-tenant data isolation."
+        )
+
     # Generate session_id nếu chưa có
     resolved_session_id = session_id or str(uuid.uuid4())
 
     # Resolve max_steps
     resolved_max_steps = max_steps if max_steps is not None else settings.MAX_AGENT_STEPS
 
+    # Chuẩn hóa user_id thành string
+    resolved_user_id = str(user_id).strip()
+
     state: AgentState = {
         # Input
         "query": query.strip(),
+        "user_id": resolved_user_id,
         "session_id": resolved_session_id,
         "agent_profile": agent_profile,
 
@@ -373,11 +396,13 @@ def create_initial_state(
 
     logger.info(
         f"Created initial AgentState | "
+        f"user_id={resolved_user_id} | "
         f"session={resolved_session_id[:8]}... | "
         f"profile={agent_profile} | "
         f"max_steps={resolved_max_steps} | "
         f"query='{query[:50]}...'" if len(query) > 50 else
         f"Created initial AgentState | "
+        f"user_id={resolved_user_id} | "
         f"session={resolved_session_id[:8]}... | "
         f"profile={agent_profile} | "
         f"max_steps={resolved_max_steps} | "
@@ -466,6 +491,7 @@ def get_state_summary(state: AgentState) -> dict[str, Any]:
         logger.debug(f"State summary: {summary}")
     """
     return {
+        "user_id": state.get("user_id", "unknown"),
         "session_id": state["session_id"][:8] + "...",
         "query_preview": state["query"][:50] + ("..." if len(state["query"]) > 50 else ""),
         "step": f"{state['current_step']}/{state['max_steps']}",

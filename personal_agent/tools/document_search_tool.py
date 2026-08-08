@@ -61,7 +61,7 @@ logger = get_logger(__name__)
 # ═══════════════════════════════════════════════════════════════════════
 
 # Số ký tự tối đa cho tổng context trả về agent
-_MAX_TOTAL_CONTEXT_LENGTH = 8000
+_MAX_TOTAL_CONTEXT_LENGTH = 10000
 
 # Số kết quả mặc định khi query
 _DEFAULT_N_RESULTS = 5

@@ -309,13 +309,25 @@ class ToolExecutor:
         # ── 4. Thực thi tool ──────────────────────────────────────────
         tool = ToolRegistry.get(tool_name)
 
+        # ── 4a. Tiêm user_id từ state vào tool_args ──────────────────
+        # user_id được hệ thống tiêm ngầm, KHÔNG phải LLM tự truyền.
+        # Đảm bảo mọi tool luôn nhận đúng user_id của session hiện tại,
+        # ngăn chặn cross-user data leakage.
+        user_id = state.get("user_id", "")
+        if user_id:
+            tool_args = {**tool_args, "user_id": user_id}
+            logger.debug(
+                f"[Step {current_step}] Injected user_id='{user_id}' "
+                f"into tool_args for '{tool_name}'"
+            )
+
         logger.info(
             f"[Step {current_step}] Executing tool '{tool_name}' | "
             f"args={tool_args} | session={session_preview}..."
         )
 
         # safe_run() KHÔNG BAO GIỜ throw exception
-        result = tool.safe_run(**tool_args)
+        result = tool.safe_agrun(**tool_args)
 
         # ── 5. Format observation ─────────────────────────────────────
         if result.success:

@@ -74,7 +74,7 @@ _FETCH_TIMEOUT = 15
 _MAX_CONTENT_LENGTH = 3000
 
 # Số ký tự tối đa cho tổng context trả về agent
-_MAX_TOTAL_CONTEXT_LENGTH = 8000
+_MAX_TOTAL_CONTEXT_LENGTH = 10000
 
 # Số worker threads cho parallel content extraction
 _MAX_WORKERS = 10
@@ -189,7 +189,7 @@ class WebSearchTool(BaseTool):
     description: ClassVar[str] = (
         "Tìm kiếm thông tin trên internet qua DuckDuckGo. "
         "Sử dụng khi câu hỏi cần thông tin mới nhất, tin tức, "
-        "hoặc thông tin không có trong FAQ database nội bộ. "
+        "hoặc thông tin không có trong DOCUMENTS database nội bộ. "
         "Có thể trích xuất nội dung đầy đủ từ trang web kết quả "
         "nếu cần thông tin chi tiết (đặt extract_content=True)."
         "Luôn thử với extract_content=False trong DUY NHẤT 1 lần , nếu không đủ thông tin hãy lập tức chuyển thành extract_content=True"

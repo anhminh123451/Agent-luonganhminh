@@ -120,7 +120,7 @@ PERSONAL_AGENT = AgentProfile(
         "Trợ lý AI tổng quát với quyền truy cập tất cả tools. "
         "Phù hợp cho các câu hỏi đa dạng, không giới hạn domain."
     ),
-    allowed_tools=["faq_search", "branch_search", "web_search"],
+    allowed_tools=["document_search","web_search"],
     metadata={"tier": "default", "domain": "all"},
 )
 
