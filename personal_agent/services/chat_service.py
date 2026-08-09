@@ -117,18 +117,19 @@ class ChatService:
     # CHAT — Gọi agent và trả response
     # ═════════════════════════════════════════════════════════════════
 
-    def chat(self, request: ChatRequest) -> ChatResponse:
+    def chat(self, request: ChatRequest, user_id: int) -> ChatResponse:
         """
         Xử lý một chat request — gọi agent và trả response.
 
         Workflow:
             1. Extract parameters từ ChatRequest
-            2. Gọi invoke_agent() (agent/graph.py)
+            2. Gọi invoke_agent() với user_id (agent/graph.py)
             3. Chuyển đổi AgentState dict → ChatResponse
             4. Log kết quả
 
         Args:
             request: ChatRequest đã được Pydantic validate.
+            user_id: ID người dùng (từ JWT token, dùng cho multi-tenant filtering).
 
         Returns:
             ChatResponse chứa câu trả lời và metadata.
@@ -143,6 +144,7 @@ class ChatService:
         logger.info(
             f"Chat request received | "
             f"query='{request.query[:50]}...' | "
+            f"user_id={user_id} | "
             f"session_id={request.session_id or 'new'} | "
             f"profile={request.agent_profile}"
         )
@@ -153,6 +155,7 @@ class ChatService:
 
             result = invoke_agent(
                 query=request.query,
+                user_id=str(user_id),
                 agent_profile=request.agent_profile,
                 session_id=request.session_id,
                 max_steps=request.max_steps,

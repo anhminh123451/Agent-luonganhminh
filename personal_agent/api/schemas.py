@@ -39,7 +39,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator,EmailStr
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -482,3 +482,79 @@ class ErrorResponse(BaseModel):
         description="Request ID để tracking/debugging.",
         examples=["req-abc123"],
     )
+
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# AUTH SCHEMAS 
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class RegisterRequest(BaseModel):
+    """Request body cho POST /auth/register."""
+
+    username: str = Field(
+        ...,
+        min_length=2,
+        max_length=50,
+        description="Tên hiển thị của user.",
+        examples=["Anh Minh"],
+    )
+    email: EmailStr = Field(
+        ...,
+        description="Email đăng ký (unique).",
+        examples=["minh@example.com"],
+    )
+    password: str = Field(
+        ...,
+        min_length=6,
+        max_length=128,
+        description="Mật khẩu (tối thiểu 6 ký tự).",
+        examples=["strongpassword123"],
+    )
+
+
+class TokenResponse(BaseModel):
+    """Response body cho login / refresh — trả về cặp JWT token."""
+
+    access_token: str = Field(
+        ..., description="JWT access token (dùng cho Authorization header)."
+    )
+    refresh_token: str = Field(
+        ..., description="JWT refresh token (dùng để làm mới access token)."
+    )
+    token_type: str = Field(
+        default="bearer", description="Loại token (luôn là 'bearer')."
+    )
+
+
+class RefreshRequest(BaseModel):
+    """Request body cho POST /auth/refresh."""
+
+    refresh_token: str = Field(
+        ..., description="Refresh token hiện tại."
+    )
+
+
+class LogoutRequest(BaseModel):
+    """Request body cho POST /auth/logout."""
+
+    refresh_token: str = Field(
+        ..., description="Refresh token cần thu hồi."
+    )
+
+
+class UserResponse(BaseModel):
+    """Response chứa thông tin user (không bao gồm password)."""
+
+    user_id: int = Field(..., description="ID của user.")
+    username: str = Field(..., description="Tên hiển thị.")
+    email: str = Field(..., description="Email đã đăng ký.")
+
+    model_config = {"from_attributes": True}
+
+
+class MessageResponse(BaseModel):
+    """Response chứa thông báo đơn giản."""
+
+    message: str = Field(..., description="Thông báo kết quả.")

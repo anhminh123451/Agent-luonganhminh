@@ -2,9 +2,10 @@ from databases.database import Base
 from sqlalchemy import Column, Integer, String, DateTime, Boolean,func,ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column,relationship
 from datetime import datetime,timezone
+from typing import Text
 
 
-class User(Base):
+class Users(Base):
     __tablename__="users"
     user_id=Column(Integer,primary_key=True,index=True)
     username=Column(String)
@@ -22,9 +23,10 @@ class Documents(Base):
     title=Column(String)
     content=Column(String)
     created_at=Column(DateTime,default=datetime.now(timezone.utc))
+    storage_path=Column(Text,nullable=False,unique=True)
     user_id=Column(Integer,ForeignKey("users.user_id"))
 
-    user:Mapped["User"] = relationship(back_populates="documents")
+    user:Mapped["Users"] = relationship(back_populates="documents")
 
 
 
@@ -36,5 +38,5 @@ class RefreshToken(Base):
     created_at=Column(DateTime,default=datetime.now(timezone.utc))
     is_revoked=Column(Boolean,default=False)
 
-    user:Mapped["User"] = relationship(back_populates="refresh_tokens")
+    user:Mapped["Users"] = relationship(back_populates="refresh_tokens")
     

@@ -4,16 +4,17 @@ Chat Routes — Module 6 (API Layer).
 Module này định nghĩa các FastAPI route handlers cho chat và index operations.
 
 Endpoints:
-    POST /chat          — Nhận câu hỏi, gọi agent, trả response
+    POST /chat          — Nhận câu hỏi, gọi agent, trả response (Yêu cầu Auth)
     POST /index/rebuild — Trigger reindex knowledge base
 
 Kiến trúc:
 
     ┌──────────────────────────────────────────────────────────────────┐
-    │  Client Request                                                  │
+    │  Client Request  (Authorization: Bearer <token>)                 │
     │    │                                                             │
     │    ▼                                                             │
     │  Route Handler (chat.py)                                         │
+    │    ├── Authenticate user  (CurrentUserDep → user_id)             │
     │    ├── Validate request  (Pydantic — tự động)                    │
     │    ├── Inject dependencies (Depends — ChatService, request_id)   │
     │    ├── Delegate to ChatService (business logic)                  │
@@ -28,6 +29,7 @@ Nguyên tắc thiết kế:
     - Dependency Injection qua Depends() → dễ test, loose coupling
     - Exception handling: map custom exceptions → HTTP error response chuẩn
     - Request ID tracking: mỗi request có unique ID để debug/tracking
+    - Authentication: JWT token bắt buộc, user_id được trích xuất và truyền cho agent
 
 Exception → HTTP Status Code mapping:
     ┌──────────────────────────┬──────────┬──────────────────────────┐
@@ -44,7 +46,7 @@ Exception → HTTP Status Code mapping:
 Tham khảo:
     - Plan.md Module 6: FastAPI REST API
     - api/schemas.py: ChatRequest, ChatResponse, ErrorResponse, IndexRebuildResponse
-    - api/dependencies.py: ChatServiceDep, RequestIdDep, SettingsDep
+    - api/dependencies.py: ChatServiceDep, RequestIdDep, SettingsDep, CurrentUserDep
     - services/chat_service.py: ChatService.chat(), ChatService.rebuild_index()
     - core/exceptions.py: BankingAgentError hierarchy
 """
@@ -60,6 +62,7 @@ from fastapi.responses import JSONResponse
 
 from api.dependencies import (
     ChatServiceDep,
+    CurrentUserDep,
     RequestIdDep,
     SettingsDep,
 )
@@ -135,8 +138,9 @@ def _build_error_response(
     description=(
         "Gửi câu hỏi cho AI Agent và nhận câu trả lời. "
         "Agent sử dụng ReAct loop với LangGraph để suy luận, "
-        "gọi tools (FAQ search, branch search, web search), "
+        "gọi tools (document search, web search), "
         "và tổng hợp câu trả lời.\n\n"
+        "**Yêu cầu:** Authorization: Bearer <access_token>\n\n"
         "**Session management:** Gửi kèm `session_id` từ response "
         "trước để duy trì ngữ cảnh hội thoại."
     ),
@@ -147,6 +151,10 @@ def _build_error_response(
         },
         400: {
             "description": "Request không hợp lệ",
+            "model": ErrorResponse,
+        },
+        401: {
+            "description": "Token không hợp lệ hoặc thiếu",
             "model": ErrorResponse,
         },
         503: {
@@ -161,6 +169,7 @@ def _build_error_response(
 )
 async def chat(
     request: ChatRequest,
+    current_user: CurrentUserDep,
     service: ChatServiceDep,
     request_id: RequestIdDep,
 ) -> ChatResponse:
@@ -168,10 +177,11 @@ async def chat(
     Xử lý chat request — delegate cho ChatService.
 
     Flow:
-        1. FastAPI tự validate ChatRequest (Pydantic)
-        2. Inject ChatService + Request ID (Depends)
-        3. Gọi service.chat() trên thread pool (sync → async bridge)
-        4. Trả ChatResponse hoặc error response chuẩn hóa
+        1. Authenticate user (CurrentUserDep → JWT → user_id)
+        2. FastAPI tự validate ChatRequest (Pydantic)
+        3. Inject ChatService + Request ID (Depends)
+        4. Gọi service.chat() trên thread pool (sync → async bridge)
+        5. Trả ChatResponse hoặc error response chuẩn hóa
 
     Tại sao dùng run_in_executor:
         - ChatService.chat() gọi invoke_agent() — sync blocking call
@@ -181,6 +191,7 @@ async def chat(
 
     Args:
         request: ChatRequest đã được Pydantic validate.
+        current_user: Users ORM object (injected via JWT token).
         service: ChatService instance (injected via Depends).
         request_id: Unique request ID (injected via Depends).
 
@@ -188,9 +199,12 @@ async def chat(
         ChatResponse nếu thành công.
         ErrorResponse (JSONResponse) nếu lỗi.
     """
+    user_id = current_user.user_id
+
     logger.info(
         f"[{request_id}] POST /chat | "
         f"query='{request.query[:50]}...' | "
+        f"user_id={user_id} | "
         f"session_id={request.session_id or 'new'} | "
         f"profile={request.agent_profile}"
     )
@@ -202,7 +216,7 @@ async def chat(
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,  # Default thread pool executor
-            partial(service.chat, request),
+            partial(service.chat, request, user_id),
         )
 
         logger.info(

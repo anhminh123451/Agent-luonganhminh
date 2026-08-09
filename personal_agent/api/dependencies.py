@@ -58,10 +58,17 @@ import uuid
 from typing import Annotated
 
 from fastapi import Depends, Request
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy.orm import Session
+from databases.database import get_db
 
 from core.logger import get_logger
 
 logger = get_logger(__name__)
+
+# OAuth2 scheme — cho Swagger UI "Authorize" button
+# tokenUrl trỏ tới endpoint login trong auth routes
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -70,6 +77,7 @@ logger = get_logger(__name__)
 
 _chat_service_instance = None
 _vector_store_instance = None
+_document_service_instance = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -144,6 +152,44 @@ def get_chat_service():
             )
 
     return _chat_service_instance
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# DOCUMENT SERVICE DEPENDENCY — Inject document upload logic
+# ═══════════════════════════════════════════════════════════════════════
+
+def get_document_service():
+    """
+    Dependency trả về DocumentService singleton.
+
+    DocumentService xử lý pipeline upload tài liệu:
+    parse → embed → lưu vector store với user_id.
+
+    Returns:
+        DocumentService instance.
+
+    Raises:
+        ServiceUnavailableError: Nếu không thể khởi tạo DocumentService.
+    """
+    global _document_service_instance
+
+    if _document_service_instance is None:
+        try:
+            from services.document_service import DocumentService
+            _document_service_instance = DocumentService()
+            logger.info("DocumentService dependency initialized (singleton)")
+        except Exception as e:
+            logger.error(
+                f"Failed to initialize DocumentService: {e}",
+                exc_info=True,
+            )
+            from core.exceptions import ServiceUnavailableError
+            raise ServiceUnavailableError(
+                "DocumentService is not available",
+                details={"error": str(e), "type": type(e).__name__},
+            )
+
+    return _document_service_instance
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -290,6 +336,72 @@ def get_request_id(request: Request) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# CURRENT USER DEPENDENCY — JWT Authentication (per-request)
+# ═══════════════════════════════════════════════════════════════════════
+
+def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    """Dependency giải mã JWT và trả về Users ORM object.
+
+    Được inject vào các route cần authentication qua
+    ``Depends(get_current_user)`` hoặc ``CurrentUserDep``.
+
+    Flow:
+        1. Lấy token từ ``Authorization: Bearer <token>`` header.
+        2. Decode token → lấy ``sub`` (user_id).
+        3. Kiểm tra ``token_type`` là ``access`` (chặn refresh token).
+        4. Query DB tìm user theo user_id.
+        5. Trả về Users hoặc raise ``UnauthorizedError``.
+
+    Args:
+        token: JWT access token (tự động extract từ header bởi
+               OAuth2PasswordBearer).
+        db: SQLAlchemy session (inject bởi FastAPI Depends(get_db)).
+
+    Returns:
+        Users ORM instance.
+
+    Raises:
+        HTTPException: Nếu token không hợp lệ, hết hạn,
+            không phải access token, hoặc user không tồn tại.
+
+    Ví dụ trong route handler:
+        @router.get("/me")
+        async def me(user: Users = Depends(get_current_user)):
+            return user
+
+        # Hoặc dùng Annotated alias:
+        @router.get("/me")
+        async def me(user: CurrentUserDep):
+            return user
+    """
+    from fastapi import HTTPException, status
+    from core.security import decode_token
+    from databases.models import Users
+
+    payload = decode_token(token)
+
+    # Xác minh token_type là access (không cho dùng refresh token để auth)
+    if payload.get("token_type") != "access":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không phải access token.")
+
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token không chứa thông tin người dùng.")
+
+    user = db.query(Users).filter(Users.user_id == int(user_id)).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Người dùng không tồn tại.")
+
+    return user
+
+
+
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # TYPE ALIASES — Annotated types cho clean route signatures
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -303,10 +415,14 @@ def get_request_id(request: Request) -> str:
 
 from core.config import Settings
 from services.chat_service import ChatService
+from services.document_service import DocumentService
+from databases.models import Users
 
 ChatServiceDep = Annotated[ChatService, Depends(get_chat_service)]
+DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RequestIdDep = Annotated[str, Depends(get_request_id)]
+CurrentUserDep = Annotated[Users, Depends(get_current_user)]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -327,9 +443,10 @@ def reset_dependencies() -> None:
             yield
             reset_dependencies()
     """
-    global _chat_service_instance, _vector_store_instance
+    global _chat_service_instance, _vector_store_instance, _document_service_instance
 
     _chat_service_instance = None
     _vector_store_instance = None
+    _document_service_instance = None
 
     logger.info("All dependency caches cleared (testing reset)")

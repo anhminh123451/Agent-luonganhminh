@@ -327,7 +327,7 @@ class ToolExecutor:
         )
 
         # safe_run() KHÔNG BAO GIỜ throw exception
-        result = tool.safe_agrun(**tool_args)
+        result = tool.safe_run(**tool_args)
 
         # ── 5. Format observation ─────────────────────────────────────
         if result.success:

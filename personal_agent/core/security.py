@@ -18,19 +18,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 
 from core.config import settings
-from core.exceptions import UnauthorizedError
+from fastapi import HTTPException, status
+
 # ---------------------------------------------------------------------------
 # Password hashing (bcrypt)
 # ---------------------------------------------------------------------------
-
-# CryptContext quản lý thuật toán hash.
-# - schemes=["bcrypt"]  → sử dụng bcrypt làm thuật toán chính.
-# - deprecated="auto"   → tự động đánh dấu các scheme cũ là deprecated.
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(plain_password: str) -> str:
     """Băm một mật khẩu dạng plaintext, trả về chuỗi hash bcrypt.
@@ -41,7 +36,10 @@ def hash_password(plain_password: str) -> str:
     Returns:
         Chuỗi hash bcrypt (ví dụ ``$2b$12$...``).
     """
-    return _pwd_context.hash(plain_password)
+    pwd_bytes = plain_password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed_bytes = bcrypt.hashpw(pwd_bytes, salt)
+    return hashed_bytes.decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -54,8 +52,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     Returns:
         ``True`` nếu khớp, ``False`` nếu không.
     """
-    return _pwd_context.verify(plain_password, hashed_password)
-
+    pwd_bytes = plain_password.encode('utf-8')
+    hash_bytes = hashed_password.encode('utf-8')
+    return bcrypt.checkpw(pwd_bytes, hash_bytes)
 
 # ---------------------------------------------------------------------------
 # JWT Token
@@ -107,7 +106,7 @@ def decode_token(token: str) -> dict[str, Any]:
         Payload (dict) chứa trong token.
 
     Raises:
-        UnauthorizedError: Nếu token không hợp lệ, đã hết hạn,
+        HTTPException: Nếu token không hợp lệ, đã hết hạn,
             hoặc thiếu claim ``sub``.
     """
     try:
@@ -117,13 +116,15 @@ def decode_token(token: str) -> dict[str, Any]:
             algorithms=[settings.JWT_ALGORITHM],
         )
     except JWTError as exc:
-        raise UnauthorizedError(
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token không hợp lệ hoặc đã hết hạn.",
         ) from exc
 
     # Đảm bảo token chứa subject claim
     if payload.get("sub") is None:
-        raise UnauthorizedError(
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token không chứa thông tin người dùng (missing 'sub').",
         )
 
