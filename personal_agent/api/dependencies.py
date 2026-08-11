@@ -115,7 +115,6 @@ def get_chat_service():
     và cache ở module-level. Tất cả requests share cùng instance.
 
     Tại sao singleton:
-        - ChatService chứa lazy-init Indexer (tốn tài nguyên)
         - Business logic không có state per-request
         - Tránh overhead tạo mới mỗi request
 

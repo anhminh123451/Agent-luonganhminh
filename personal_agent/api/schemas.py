@@ -347,51 +347,6 @@ class HealthResponse(BaseModel):
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# INDEX REBUILD SCHEMAS — POST /index/rebuild
-# ═══════════════════════════════════════════════════════════════════════
-
-class IndexRebuildResponse(BaseModel):
-    """
-    Response body cho POST /index/rebuild endpoint.
-
-    Trả về kết quả sau khi trigger reindex knowledge base.
-
-    Ví dụ response:
-        {
-            "success": true,
-            "message": "Knowledge base reindexed successfully",
-            "documents_indexed": 150,
-            "duration_seconds": 12.5
-        }
-    """
-
-    success: bool = Field(
-        ...,
-        description="True nếu reindex thành công, False nếu lỗi.",
-        examples=[True],
-    )
-
-    message: str = Field(
-        ...,
-        description="Mô tả kết quả reindex.",
-        examples=["Knowledge base reindexed successfully"],
-    )
-
-    documents_indexed: int | None = Field(
-        default=None,
-        ge=0,
-        description="Số documents đã index. None nếu lỗi.",
-        examples=[150],
-    )
-
-    duration_seconds: float | None = Field(
-        default=None,
-        ge=0.0,
-        description="Thời gian reindex (giây). None nếu lỗi.",
-        examples=[12.5],
-    )
-
 
 # ═══════════════════════════════════════════════════════════════════════
 # ERROR SCHEMAS — Chuẩn hóa error response

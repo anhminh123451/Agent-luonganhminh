@@ -197,6 +197,30 @@ class DocumentService:
                 f"size={temp_path.stat().st_size} bytes"
             )
 
+            # ── Step 2.5: Check for duplicate file hash ──────────
+            import hashlib
+            from databases.models import Documents as DocumentModel
+            
+            hasher = hashlib.md5()
+            with open(temp_path, "rb") as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hasher.update(chunk)
+            file_hash = hasher.hexdigest()
+
+            existing_doc = db.query(DocumentModel).filter(
+                DocumentModel.file_hash == file_hash,
+                DocumentModel.user_id == user_id
+            ).first()
+
+            if existing_doc:
+                return UploadResult(
+                    success=False,
+                    filename=filename,
+                    duration_seconds=time.time() - start_time,
+                    message="File already exists (duplicate content).",
+                    error="Duplicate file upload",
+                )
+
             # ── Step 3: Parse text (DataLoader) ──────────────────
             from knowledge_base.documents_loader import LoaderRegistry
 
@@ -260,9 +284,14 @@ class DocumentService:
             # ── Step 7: Lưu metadata vào SQL database ────────────
             from databases.models import Documents as DocumentModel
 
+            full_content = " ".join(contents)
+            words = full_content.split()
+            preview_content = " ".join(words[:100]) + ("..." if len(words) > 50 else "")
+
             db_doc = DocumentModel(
                 title=filename,
-                content=f"{len(documents)} chunks indexed",
+                content=preview_content,
+                file_hash=file_hash,
                 user_id=user_id,
             )
             db.add(db_doc)

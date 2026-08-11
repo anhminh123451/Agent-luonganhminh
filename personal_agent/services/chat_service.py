@@ -12,12 +12,11 @@ Kiến trúc:
     │    ▼                                                       │
     │  ChatService                                               │
     │    ├── chat()           → Gọi agent, trả ChatResponse      │
-    │    ├── rebuild_index()  → Trigger reindex knowledge base    │
+    │    ├── rebuild_index()  → Trigger reindex knowledge base   │
     │    └── health_check()   → Kiểm tra trạng thái dependencies │
     │    │                                                       │
     │    ▼                                                       │
-    │  Agent Core (agent/graph.py → invoke_agent())              │
-    │  Knowledge Base (knowledge_base/indexer.py → Indexer)      │
+    │  Agent Core (agent/graph.py → invoke_agent()               │     
     └────────────────────────────────────────────────────────────┘
 
 Tại sao cần Service Layer:
@@ -37,15 +36,12 @@ Cách sử dụng:
     # Health check
     health = service.health_check()
 
-    # Rebuild index
-    result = service.rebuild_index(force=True)
 
 Tham khảo:
     - Plan.md Module 6: FastAPI REST API
     - Plan.md Module 7: Business Logic (chat_service.py)
     - api/schemas.py: ChatRequest, ChatResponse, HealthResponse, ...
     - agent/graph.py: invoke_agent()
-    - knowledge_base/indexer.py: Indexer
 """
 
 from __future__ import annotations
@@ -57,10 +53,8 @@ from api.schemas import (
     ChatResponse,
     DependencyStatus,
     HealthResponse,
-    IndexRebuildResponse,
 )
 from core.exceptions import (
-    BankingAgentError,
     GraphExecutionError,
     KnowledgeBaseError,
     ServiceUnavailableError,
@@ -82,8 +76,6 @@ class ChatService:
     status codes, response serialization). Route handlers chỉ cần
     gọi service methods và trả kết quả.
 
-    Attributes:
-        _indexer: Lazy-initialized Indexer instance cho rebuild operations.
 
     Ví dụ:
         service = ChatService()
@@ -95,23 +87,8 @@ class ChatService:
     """
 
     def __init__(self) -> None:
-        self._indexer = None
         logger.info("ChatService initialized")
 
-    # ─── Lazy initialization ─────────────────────────────────────────
-
-    def _get_indexer(self):
-        """
-        Lazy-init Indexer instance.
-
-        Tránh import nặng khi khởi tạo ChatService nếu chưa cần
-        rebuild index.
-        """
-        if self._indexer is None:
-            from knowledge_base.indexer import Indexer
-            self._indexer = Indexer()
-            logger.debug("Indexer lazy-initialized")
-        return self._indexer
 
     # ═════════════════════════════════════════════════════════════════
     # CHAT — Gọi agent và trả response
@@ -195,7 +172,6 @@ class ChatService:
                 f"duration={duration:.2f}s",
                 exc_info=True,
             )
-            raise
 
             raise GraphExecutionError(
                 message=f"Agent processing failed: {e.message}",
@@ -215,96 +191,7 @@ class ChatService:
                 details={"error": str(e), "type": type(e).__name__},
             ) from e
 
-    # ═════════════════════════════════════════════════════════════════
-    # REBUILD INDEX — Trigger reindex knowledge base
-    # ═════════════════════════════════════════════════════════════════
-
-    def rebuild_index(self, force: bool = False) -> IndexRebuildResponse:
-        """
-        Trigger reindex knowledge base.
-
-        Gọi Indexer.run() để build/rebuild vector store index.
-        Kết quả được chuyển đổi sang IndexRebuildResponse cho API.
-
-        Args:
-            force: Nếu True, xóa sạch index cũ và rebuild từ đầu.
-                   Nếu False, dùng SmartIndexStrategy (chỉ index khi
-                   data thay đổi).
-
-        Returns:
-            IndexRebuildResponse chứa kết quả reindex.
-        """
-        logger.info(
-            f"Index rebuild requested | force={force}"
-        )
-
-        start_time = time.time()
-
-        try:
-            indexer = self._get_indexer()
-            result = indexer.run(force=force)
-
-            duration = time.time() - start_time
-
-            if result.skipped:
-                message = (
-                    "Knowledge base is up-to-date — no reindex needed"
-                )
-            elif result.success:
-                message = (
-                    f"Knowledge base reindexed successfully "
-                    f"({result.total_documents} documents from "
-                    f"{len(result.files_processed)} files)"
-                )
-            else:
-                message = f"Reindex failed: {result.error}"
-
-            logger.info(
-                f"Index rebuild completed | "
-                f"success={result.success} | "
-                f"skipped={result.skipped} | "
-                f"documents={result.total_documents} | "
-                f"duration={duration:.2f}s"
-            )
-
-            return IndexRebuildResponse(
-                success=result.success,
-                message=message,
-                documents_indexed=(
-                    result.total_documents if result.success else None
-                ),
-                duration_seconds=round(result.duration_seconds, 2),
-            )
-
-        except KnowledgeBaseError as e:
-            duration = time.time() - start_time
-            logger.error(
-                f"Index rebuild failed (KnowledgeBaseError) | "
-                f"error={e.message} | "
-                f"duration={duration:.2f}s",
-                exc_info=True,
-            )
-            return IndexRebuildResponse(
-                success=False,
-                message=f"Reindex failed: {e.message}",
-                documents_indexed=None,
-                duration_seconds=round(duration, 2),
-            )
-
-        except Exception as e:
-            duration = time.time() - start_time
-            logger.error(
-                f"Index rebuild failed (unexpected) | "
-                f"error={e} | "
-                f"duration={duration:.2f}s",
-                exc_info=True,
-            )
-            return IndexRebuildResponse(
-                success=False,
-                message=f"Unexpected error during reindex: {e}",
-                documents_indexed=None,
-                duration_seconds=round(duration, 2),
-            )
+    
 
     # ═════════════════════════════════════════════════════════════════
     # HEALTH CHECK — Kiểm tra trạng thái dependencies
