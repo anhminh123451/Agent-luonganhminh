@@ -184,7 +184,7 @@ class AgentState(TypedDict):
     query: str
     """Câu hỏi gốc từ user. Không thay đổi trong suốt agent loop."""
 
-    user_id: str
+    user_id: int
     """
     ID người dùng (multi-tenant). Dùng cho:
     - Filter tài liệu trong VectorStore theo user
@@ -311,7 +311,7 @@ class AgentState(TypedDict):
 
 def create_initial_state(
     query: str,
-    user_id: str,
+    user_id: int,
     session_id: str | None = None,
     agent_profile: str = "personal_agent",
     max_steps: int | None = None,
@@ -348,7 +348,7 @@ def create_initial_state(
     if not query or not query.strip():
         raise ValueError("Query không được rỗng. Vui lòng nhập câu hỏi.")
 
-    if not user_id or not str(user_id).strip():
+    if user_id is None:
         raise ValueError(
             "user_id không được rỗng. "
             "user_id bắt buộc để đảm bảo multi-tenant data isolation."
@@ -360,8 +360,8 @@ def create_initial_state(
     # Resolve max_steps
     resolved_max_steps = max_steps if max_steps is not None else settings.MAX_AGENT_STEPS
 
-    # Chuẩn hóa user_id thành string
-    resolved_user_id = str(user_id).strip()
+    # Chuẩn hóa user_id (đã là int)
+    resolved_user_id = user_id
 
     state: AgentState = {
         # Input

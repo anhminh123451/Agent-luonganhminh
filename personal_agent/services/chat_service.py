@@ -132,7 +132,7 @@ class ChatService:
 
             result = invoke_agent(
                 query=request.query,
-                user_id=str(user_id),
+                user_id=user_id,
                 agent_profile=request.agent_profile,
                 session_id=request.session_id,
                 max_steps=request.max_steps,

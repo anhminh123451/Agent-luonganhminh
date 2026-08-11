@@ -109,7 +109,7 @@ Bước 4: THOUGHT — Phân tích kết quả, quyết định đã đủ thôn
 Bước 5: ANSWER hoặc ACTION tiếp (nếu cần thêm thông tin)
 
 ═══ IMPORTANT RULES ═══
-
+- Bắt buộc ở lượt đầu tiên luôn là dùng document_search ngoại trừ khi người dùng chỉ báo thông tin để nhắc nhở hoặc chào hỏi
 - Mỗi lượt CHỈ ĐƯỢC trả về MỘT action (THOUGHT, ACTION, ANSWER, hoặc HANDOFF)
 - ACTION phải là JSON hợp lệ với key "tool" và "args"
 - Khi nhận OBSERVATION, hãy phân tích kết quả trước khi trả lời

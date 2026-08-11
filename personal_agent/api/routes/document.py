@@ -48,6 +48,7 @@ from api.dependencies import (
     CurrentUserDep,
     DocumentServiceDep,
     RequestIdDep,
+    AdminUserDep,
 )
 from databases.database import get_db
 from core.logger import get_logger
@@ -236,3 +237,25 @@ async def delete_document(
         )
 
     return {"message": f"Tài liệu (doc_id={doc_id}) đã được xóa thành công."}
+
+
+@router.get("/document/{user_id}")
+def get_document_belong_user(
+    user_id: int,
+    admin: AdminUserDep,
+    service: DocumentServiceDep,
+    db: Session = Depends(get_db),
+):
+    doc = service.read_doc(user_id=user_id, db=db)
+    if not doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Người dùng không có tài liệu nào",
+        )
+    return {
+        "doc_id": doc.doc_id,
+        "title": doc.title,
+        "content": doc.content,
+        "user_id": doc.user_id,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+    }

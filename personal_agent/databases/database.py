@@ -20,12 +20,4 @@ def get_db():
         yield db             
     finally:
         print("đóng session")
-        db.close()           
-
-
-
-
-
-
-
-
+        db.close()    

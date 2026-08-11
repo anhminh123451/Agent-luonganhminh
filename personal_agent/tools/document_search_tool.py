@@ -101,8 +101,8 @@ class DocumentSearchArgs(ToolArgsSchema):
         le=_MAX_N_RESULTS,
         description="Số kết quả tài liệu tối đa trả về (1–20).",
     )
-    user_id: str = Field(
-        default="",
+    user_id: int = Field(
+        default=0,
         description=(
             "ID người dùng — được hệ thống tự động tiêm vào từ AgentState. "
             "LLM KHÔNG cần truyền field này."

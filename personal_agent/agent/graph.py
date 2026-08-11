@@ -399,7 +399,7 @@ def reset_graph() -> None:
 
 def invoke_agent(
     query: str,
-    user_id: str,
+    user_id: int,
     agent_profile: str = "personal_agent",
     session_id: str | None = None,
     max_steps: int | None = None,

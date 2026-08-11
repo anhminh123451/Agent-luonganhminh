@@ -59,6 +59,7 @@ from pathlib import Path
 
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
+from databases.models import Documents
 
 from core.logger import get_logger
 
@@ -255,7 +256,7 @@ class DocumentService:
             metadatas = []
             for doc in documents:
                 meta = doc.metadata.copy() if doc.metadata else {}
-                meta["user_id"] = str(user_id)
+                meta["user_id"] = user_id
                 metadatas.append(meta)
 
             # ── Step 5: Embed documents ──────────────────────────
@@ -390,7 +391,7 @@ class DocumentService:
         Returns:
             True nếu xóa thành công, False nếu không tìm thấy.
         """
-        from databases.models import Documents
+        
 
         doc = (
             db.query(Documents)
@@ -429,3 +430,9 @@ class DocumentService:
             f"user_id={user_id} | title='{doc.title}'"
         )
         return True
+
+
+    def read_doc(self, user_id: int, db: Session) -> Documents | None:
+        doc = db.query(Documents).filter(Documents.user_id == user_id).first()
+        return doc
+

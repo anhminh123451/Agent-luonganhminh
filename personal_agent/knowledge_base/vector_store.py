@@ -266,7 +266,7 @@ class VectorStore:
 
     def query(
         self,
-        user_id: str,
+        user_id: int,
         query_text: str | None = None,
         query_embedding: list[float] | None = None,
         n_results: int = 5,
@@ -398,7 +398,7 @@ class VectorStore:
                 details={"error": str(e)},
             ) from e
 
-    def get_users(self) -> list[str]:
+    def get_users(self) -> list[int]:
         """
         Lấy danh sách tất cả user_id đã được lưu trong collection.
 
@@ -453,12 +453,12 @@ class VectorStore:
                 details={"source_file": source_file, "error": str(e)},
             ) from e
 
-    def count_by_user(self, user_id: str) -> int:
+    def count_by_user(self, user_id: int) -> int:
         """
-        Đếm số documents của một user cụ thể.
+        Đếm số documents của một user cụ thể trong ChromaDB.
 
         Args:
-            user_id: ID người dùng cần đếm.
+            user_id: ID người dùng (hỗ trợ cả str và int).
 
         Returns:
             Số lượng documents.
@@ -468,7 +468,8 @@ class VectorStore:
                 where={"user_id": user_id},
                 include=[],
             )
-            return len(results["ids"])
+            count = len(results["ids"])
+            return count
         except Exception as e:
             raise VectorStoreError(
                 f"Failed to count documents for user '{user_id}'",
@@ -477,7 +478,7 @@ class VectorStore:
 
     def _build_where_clause(
         self,
-        user_id: str,
+        user_id: int,
         where_filter: dict | None,
     ) -> dict:
         """
@@ -490,3 +491,4 @@ class VectorStore:
         if where_filter:
             return {"$and": [user_clause, where_filter]}
         return user_clause
+
