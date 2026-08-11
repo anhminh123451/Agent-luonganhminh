@@ -3,6 +3,11 @@ from api.routes import auth,chat,document,health
 from databases.database import engine, Base
 from tools import setup_tools
 from agent.profiles import setup_profiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from core.limit import limiter
+
+
 
 setup_tools()
 setup_profiles()
@@ -10,6 +15,10 @@ setup_profiles()
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
+
+app.state.limiter=limiter
+app.add_exception_handler(RateLimitExceeded,_rate_limit_exceeded_handler)
+
 
 app.include_router(
     auth.router,
