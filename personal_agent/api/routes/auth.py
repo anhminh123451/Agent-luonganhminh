@@ -33,11 +33,12 @@ Tham khảo:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status,HTTPException
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import APIRouter, Depends, status
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from core.logger import get_logger
+from core.limit import limiter
 from databases.database import get_db
 from databases.models import Users
 from services.auth_service import AuthService
@@ -110,6 +111,7 @@ def register(
         401: {"description": "Sai email hoặc mật khẩu"},
     },
 )
+@limiter.limit("5/minute")
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),

@@ -49,7 +49,7 @@ from __future__ import annotations
 # BASE EXCEPTION
 # ═══════════════════════════════════════════════════════════════════════
 
-class BankingAgentError(Exception):
+class AgentError(Exception):
     """
     Base exception cho toàn bộ Banking AI Agent.
 
@@ -77,7 +77,7 @@ class BankingAgentError(Exception):
 # MODULE 1: CORE — Configuration & Logging Errors
 # ═══════════════════════════════════════════════════════════════════════
 
-class ConfigurationError(BankingAgentError):
+class ConfigurationError(AgentError):
     """
     Lỗi cấu hình hệ thống.
 
@@ -101,7 +101,7 @@ class ConfigurationError(BankingAgentError):
 # MODULE 2: KNOWLEDGE BASE — Data, Embedding & Vector Store Errors
 # ═══════════════════════════════════════════════════════════════════════
 
-class KnowledgeBaseError(BankingAgentError):
+class KnowledgeBaseError(AgentError):
     """
     Base exception cho tất cả lỗi liên quan Knowledge Base.
     Bao gồm: load data, embedding, vector store operations.
@@ -176,7 +176,7 @@ class VectorStoreError(KnowledgeBaseError):
 # MODULE 3: TOOLS — Tool System Errors
 # ═══════════════════════════════════════════════════════════════════════
 
-class ToolError(BankingAgentError):
+class ToolError(AgentError):
     """
     Base exception cho tất cả lỗi liên quan Tool System.
     Bao gồm: tool registry, tool execution, input validation.
@@ -249,7 +249,7 @@ class ToolValidationError(ToolError):
 # MODULE 4 & 5: AGENT — Agent Core & LangGraph Errors
 # ═══════════════════════════════════════════════════════════════════════
 
-class AgentError(BankingAgentError):
+class AgentError(AgentError):
     """
     Base exception cho tất cả lỗi liên quan Agent Core.
     Bao gồm: agent runner, LLM response parsing, graph execution.
@@ -322,7 +322,7 @@ class GraphExecutionError(AgentError):
 # MODULE 6: API — FastAPI Layer Errors
 # ═══════════════════════════════════════════════════════════════════════
 
-class APIError(BankingAgentError):
+class APIError(AgentError):
     """
     Base exception cho tất cả lỗi liên quan API Layer.
     Bao gồm: request validation, service availability.

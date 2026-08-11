@@ -73,7 +73,7 @@ from api.schemas import (
     ErrorResponse,
 )
 from core.exceptions import (
-    BankingAgentError,
+    AgentError,
     GraphExecutionError,
     InvalidRequestError,
     ServiceUnavailableError,
@@ -269,7 +269,7 @@ async def chat(
         )
 
     # ── BankingAgentError (catch-all cho custom exceptions) → 500 ──
-    except BankingAgentError as e:
+    except AgentError as e:
         logger.error(
             f"[{request_id}] POST /chat failed (500) | "
             f"error={e.message} | type={type(e).__name__}",
