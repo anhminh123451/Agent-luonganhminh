@@ -15,8 +15,6 @@ Sử dụng:
     tokens = service.login(email="minh@x.com", password="abc")
 """
 
-from __future__ import annotations
-
 from sqlalchemy.orm import Session
 
 from fastapi import HTTPException, status
@@ -103,7 +101,7 @@ class AuthService:
         if user is None or not verify_password(password, user.hashed_password):
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Email hoặc mật khẩu không chính xác.")
 
-        token_data = {"sub": str(user.user_id)}
+        token_data = {"sub": str(user.user_id),"role":user.role}
 
         access_token = create_access_token(data=token_data)
         refresh_token = create_refresh_token(data=token_data)
@@ -155,11 +153,19 @@ class AuthService:
         db_token = (
             self.db.query(RefreshToken)
             .filter(
-                RefreshToken.token_key == refresh_token_str,
-                RefreshToken.is_revoked == False,  # noqa: E712 — SQLAlchemy filter
+                RefreshToken.token_key == refresh_token_str,  # noqa: E712 — SQLAlchemy filter
             )
             .first()
         )
+
+# === trường hợp phát hiện bất thường khi refresh bị hacker xâm nhập === 
+        if db_token.is_revoked == True:
+            all_tokens_belong_user = self.db.query(RefreshToken).filter(RefreshToken.user_id == db_token.user_id).all()
+            for token in all_tokens_belong_user:
+                token.is_revoked = True
+            self.db.commit()
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token không hợp lệ hoặc đã bị thu hồi.")
+
 
         if db_token is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token không hợp lệ hoặc đã bị thu hồi.")

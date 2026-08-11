@@ -52,16 +52,16 @@ Tham khảo:
     - core/config.py: Settings, settings singleton
 """
 
-from __future__ import annotations
-
+from fastapi import status
 import uuid
 from typing import Annotated
-
 from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from databases.database import get_db
-
+from fastapi import HTTPException, status
+from core.security import decode_token
+from databases.models import Users
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -377,9 +377,7 @@ def get_current_user(
         async def me(user: CurrentUserDep):
             return user
     """
-    from fastapi import HTTPException, status
-    from core.security import decode_token
-    from databases.models import Users
+    
 
     payload = decode_token(token)
 
@@ -396,6 +394,15 @@ def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Người dùng không tồn tại.")
 
     return user
+
+
+
+def get_admin_user(current_user:Users=Depends(get_current_user)):
+    """Dependency kiểm tra user có phải là admin không"""
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,detail="Bạn không có quyền truy cập vào chức năng này")
+    return current_user
 
 
 
@@ -423,6 +430,7 @@ DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
 RequestIdDep = Annotated[str, Depends(get_request_id)]
 CurrentUserDep = Annotated[Users, Depends(get_current_user)]
+AdminUserDep = Annotated[Users, Depends(get_admin_user)]
 
 
 # ═══════════════════════════════════════════════════════════════════════

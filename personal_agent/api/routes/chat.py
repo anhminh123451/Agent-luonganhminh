@@ -65,6 +65,7 @@ from api.dependencies import (
     CurrentUserDep,
     RequestIdDep,
     SettingsDep,
+    AdminUserDep
 )
 from api.schemas import (
     ChatRequest,
@@ -328,6 +329,7 @@ async def chat(
     },
 )
 async def rebuild_index(
+    admin: AdminUserDep,
     service: ChatServiceDep,
     request_id: RequestIdDep,
     force: Annotated[

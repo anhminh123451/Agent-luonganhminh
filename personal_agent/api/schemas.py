@@ -550,6 +550,7 @@ class UserResponse(BaseModel):
     user_id: int = Field(..., description="ID của user.")
     username: str = Field(..., description="Tên hiển thị.")
     email: str = Field(..., description="Email đã đăng ký.")
+    role:str=Field(..., description="Vai trò của user.")
 
     model_config = {"from_attributes": True}
 

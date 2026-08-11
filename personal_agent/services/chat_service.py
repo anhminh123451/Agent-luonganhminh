@@ -197,14 +197,6 @@ class ChatService:
             )
             raise
 
-        except BankingAgentError as e:
-            duration = time.time() - start_time
-            logger.error(
-                f"Chat failed (BankingAgentError) | "
-                f"error={e.message} | "
-                f"duration={duration:.2f}s",
-                exc_info=True,
-            )
             raise GraphExecutionError(
                 message=f"Agent processing failed: {e.message}",
                 details=e.details,
