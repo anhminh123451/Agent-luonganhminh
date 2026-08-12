@@ -1,0 +1,16 @@
+.venv
+__pycache__
+*.py[oc]
+.git
+.gitignore
+.env
+.vscode
+.pytest_cache
+logs/
+chroma_db/
+database/
+*.egg-info
+build/
+dist/
+wheels/
+README.md
