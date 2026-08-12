@@ -433,6 +433,6 @@ class DocumentService:
 
 
     def read_doc(self, user_id: int, db: Session) -> Documents | None:
-        doc = db.query(Documents).filter(Documents.user_id == user_id).first()
+        doc = db.query(Documents).filter(Documents.user_id == user_id).all()
         return doc
 

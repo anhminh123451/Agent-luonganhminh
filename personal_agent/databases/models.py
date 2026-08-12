@@ -25,6 +25,7 @@ class Users(Base):
 
     documents: Mapped[list["Documents"]]=relationship(back_populates="user",cascade="all, delete-orphan")
     refresh_tokens: Mapped[list["RefreshToken"]]=relationship(back_populates="user",cascade="all, delete-orphan")
+    sessions: Mapped[list["Session"]]=relationship(back_populates="user",cascade="all, delete-orphan")
 
 
 
@@ -55,4 +56,18 @@ class RefreshToken(Base):
     )
     is_revoked: Mapped[bool] = mapped_column(Boolean, default=False)
     user:Mapped["Users"] = relationship(back_populates="refresh_tokens")
+
+
+
+class Session(Base):
+    __tablename__="sessions"
+    session_id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.user_id"), index=True)
+    session_key: Mapped[str] = mapped_column(Text, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), 
+        server_default=func.now()
+    )
+    
+    user:Mapped["Users"] = relationship(back_populates="sessions")
     

@@ -246,16 +246,17 @@ def get_document_belong_user(
     service: DocumentServiceDep,
     db: Session = Depends(get_db),
 ):
-    doc = service.read_doc(user_id=user_id, db=db)
-    if not doc:
+    docs = service.read_doc(user_id=user_id, db=db)
+    if not docs:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Người dùng không có tài liệu nào",
         )
-    return {
+    return [{
         "doc_id": doc.doc_id,
         "title": doc.title,
         "content": doc.content,
         "user_id": doc.user_id,
-        "created_at": doc.created_at.isoformat() if doc.created_at else None,
-    }
+        "created_at": doc.created_at.isoformat() if doc.created_at else None
+        
+    } for doc in docs]
