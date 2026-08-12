@@ -47,11 +47,10 @@ import json
 import re
 from typing import Any, cast
 
-from google import genai
-
 from core.config import settings
 from core.exceptions import AgentStepLimitError, LLMResponseError
 from core.logger import get_logger
+from agent.llm_provider import LLMManager, QuotaExceededError
 
 from agent.state import (
     AgentState,
@@ -73,22 +72,25 @@ logger = get_logger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# LLM CLIENT — Khởi tạo Gemini client
+# LLM CLIENT — Khởi tạo LLM Manager (Gemini + Groq auto-fallback)
 # ═══════════════════════════════════════════════════════════════════════
 
-def _create_llm_client() -> genai.Client:
+def _create_llm_manager() -> LLMManager:
     """
-    Tạo Gemini client sử dụng API key từ settings.
+    Tạo LLMManager với primary và fallback providers.
+
+    Primary/fallback được xác định bởi settings.LLM_PROVIDER.
+    Khi primary hết quota, tự động chuyển sang fallback.
 
     Returns:
-        google.genai.Client instance.
-
-    Raises:
-        ConfigurationError: Khi API key không hợp lệ.
+        LLMManager instance.
     """
-    client = genai.Client(api_key=settings.GEMINI_API_KEY)
-    logger.info("Gemini LLM client initialized successfully")
-    return client
+    manager = LLMManager()
+    logger.info(
+        f"LLM Manager initialized | "
+        f"primary={manager.current_provider} ({manager.current_model})"
+    )
+    return manager
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -314,16 +316,18 @@ class AgentRunner:
     Quản lý việc gọi LLM và xử lý response trong ReAct loop.
 
     AgentRunner là LangGraph node chính — nhận AgentState,
-    gọi LLM (Gemini), parse response, và trả về partial state update.
+    gọi LLM (Gemini/Groq), parse response, và trả về partial state update.
+
+    Hỗ trợ auto-fallback: Khi primary provider hết quota,
+    tự động chuyển sang fallback provider.
 
     Attributes:
-        _client: Gemini LLM client.
-        _model: Tên model LLM sử dụng.
+        _llm_manager: LLMManager quản lý primary + fallback providers.
 
     Lifecycle:
         1. Khởi tạo 1 lần khi app startup
         2. call_agent() được gọi mỗi bước trong ReAct loop
-        3. Client được reuse cho tất cả requests
+        3. LLMManager được reuse cho tất cả requests
 
     Ví dụ:
         runner = AgentRunner()
@@ -332,23 +336,22 @@ class AgentRunner:
         graph.add_node("call_agent", runner.call_agent)
     """
 
-    def __init__(
-        self,
-        model: str = settings.MODEL_LLM,
-    ) -> None:
+    def __init__(self) -> None:
         """
-        Khởi tạo AgentRunner.
+        Khởi tạo AgentRunner với LLMManager.
 
-        Args:
-            model: Tên model Gemini sử dụng.
-                   Mặc định kiểm tra trong CONFIG.
+        LLMManager tự động đọc config từ settings:
+            - LLM_PROVIDER: primary provider (gemini/groq)
+            - MODEL_LLM: Gemini model name
+            - GROQ_MODEL: Groq model name
+            - LLM_FALLBACK_ENABLED: Bật/tắt auto-fallback
         """
-        self._client = _create_llm_client()
-        self._model = model
+        self._llm_manager = _create_llm_manager()
 
         logger.info(
             f"AgentRunner initialized | "
-            f"model={self._model}"
+            f"provider={self._llm_manager.current_provider} | "
+            f"model={self._llm_manager.current_model}"
         )
 
     # ─── Build messages cho LLM ───────────────────────────────────────
@@ -544,38 +547,81 @@ class AgentRunner:
                 f"Injected step limit warning at step {current_step}"
             )
 
-        # ── 4. Gọi LLM ──────────────────────────────────────────────
+        # ── 4. Gọi LLM (với retry khi response rỗng + auto-fallback) ──
         try:
             contents, system_instruction = self._build_llm_contents(
                 {**state, "messages": messages}
             )
 
-            # Gọi Gemini API
-            response = self._client.models.generate_content(
-                model=self._model,
-                contents=contents,
-                config={
-                    "system_instruction": system_instruction,
-                    "temperature": 0.3,
-                    "max_output_tokens": 2048,
-                },
-            )
+            # Retry config
+            max_retries = 3
+            retry_delay = 1  # giây, tăng gấp đôi mỗi lần retry
+            response_text = None
 
-            response_text = response.text
+            for attempt in range(1, max_retries + 1):
+                # Gọi LLM qua LLMManager (auto-fallback khi quota error)
+                response_text = self._llm_manager.generate_with_fallback(
+                    contents=contents,
+                    system_instruction=system_instruction,
+                    temperature=0.3,
+                    max_tokens=2048,
+                )
+
+                if response_text:
+                    break  # Có response hợp lệ, thoát retry
+
+                # Response rỗng — log và retry
+                if attempt < max_retries:
+                    logger.warning(
+                        f"LLM returned empty response | "
+                        f"provider={self._llm_manager.current_provider} | "
+                        f"step={current_step} | "
+                        f"attempt={attempt}/{max_retries} | "
+                        f"retrying in {retry_delay}s"
+                    )
+                    import time
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # exponential backoff
 
             if not response_text:
                 raise LLMResponseError(
-                    "LLM returned empty response",
-                    details={"step": current_step},
+                    f"LLM returned empty response after {max_retries} retries",
+                    details={
+                        "step": current_step,
+                        "retries": max_retries,
+                        "provider": self._llm_manager.current_provider,
+                    },
                 )
 
             logger.debug(
                 f"LLM response received | "
+                f"provider={self._llm_manager.current_provider} | "
+                f"model={self._llm_manager.current_model} | "
                 f"length={len(response_text)} chars"
             )
 
         except LLMResponseError:
             raise
+        except QuotaExceededError as e:
+            logger.error(
+                f"All LLM providers exhausted: {e}", exc_info=True
+            )
+            return {
+                "current_step": current_step + 1,
+                "current_action": ActionType.ANSWER.value,
+                "final_answer": (
+                    "Xin lỗi, tất cả LLM providers đều đã hết quota. "
+                    "Vui lòng thử lại sau ít phút."
+                ),
+                "status": AgentStatus.ERROR.value,
+                "error": f"All providers quota exceeded: {e}",
+                "messages": add_message(
+                    state,
+                    MessageRole.ASSISTANT.value,
+                    "ANSWER: Xin lỗi, tất cả LLM providers đều đã hết quota. "
+                    "Vui lòng thử lại sau ít phút.",
+                ),
+            }
         except Exception as e:
             logger.error(f"LLM call failed: {e}", exc_info=True)
             return {
