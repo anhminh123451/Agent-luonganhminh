@@ -59,6 +59,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session as DBSession
 
 from api.dependencies import (
     ChatServiceDep,
@@ -67,6 +68,8 @@ from api.dependencies import (
     SettingsDep,
     AdminUserDep
 )
+from databases.database import get_db
+from databases.models import Session as SessionModel
 from api.schemas import (
     ChatRequest,
     ChatResponse,
@@ -172,6 +175,7 @@ async def chat(
     current_user: CurrentUserDep,
     service: ChatServiceDep,
     request_id: RequestIdDep,
+    db: DBSession = Depends(get_db),
 ) -> ChatResponse:
     """
     Xử lý chat request — delegate cho ChatService.
@@ -225,6 +229,29 @@ async def chat(
             f"steps={response.num_steps} | "
             f"session_id={response.session_id[:8]}..."
         )
+
+        # ── Lưu session record nếu chưa tồn tại ──────────────────
+        try:
+            existing_session = (
+                db.query(SessionModel)
+                .filter(SessionModel.session_key == response.session_id)
+                .first()
+            )
+            if not existing_session:
+                new_session = SessionModel(
+                    session_key=response.session_id,
+                    user_id=user_id,
+                )
+                db.add(new_session)
+                db.commit()
+                logger.info(
+                    f"[{request_id}] New session saved | "
+                    f"session_key={response.session_id[:8]}..."
+                )
+        except Exception as e:
+            logger.warning(
+                f"[{request_id}] Failed to save session record: {e}"
+            )
 
         return response
 

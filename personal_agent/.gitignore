@@ -10,6 +10,7 @@ wheels/
 .venv
 Module_info
 .env
+prod.env
 chroma_db
 data
 logs/

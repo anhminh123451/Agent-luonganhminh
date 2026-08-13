@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Personal AI Agent — Trợ lý AI cá nhân thông minh, hỗ trợ phân tích tài liệu và trả lời câu hỏi.">
+    <title>Personal AI Agent</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+
+    <!-- Styles -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- AUTH PAGE — Login / Register                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div id="auth-page" class="page active">
+        <div class="auth-container">
+            <div class="auth-brand">
+                <div class="brand-icon">
+                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <rect width="48" height="48" rx="12" fill="#000" />
+                        <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24" stroke="#fff"
+                            stroke-width="2.5" stroke-linecap="round" />
+                        <path d="M18 24C18 20.686 20.686 18 24 18C27.314 18 30 20.686 30 24" stroke="#fff"
+                            stroke-width="2" stroke-linecap="round" />
+                        <circle cx="24" cy="24" r="2" fill="#fff" />
+                        <path d="M24 26V34" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+                        <path d="M20 32H28" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                </div>
+                <h1 class="brand-title">Personal AI Agent</h1>
+                <p class="brand-subtitle">Trợ lý AI cá nhân thông minh</p>
+            </div>
+
+            <div class="auth-card">
+                <div class="auth-tabs">
+                    <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">Đăng nhập</button>
+                    <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">Đăng ký</button>
+                </div>
+
+                <!-- Login Form -->
+                <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="login-email">Email</label>
+                        <input type="email" id="login-email" placeholder="email@example.com" required
+                            autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Mật khẩu</label>
+                        <input type="password" id="login-password" placeholder="••••••••" required
+                            autocomplete="current-password" minlength="6">
+                    </div>
+                    <button type="submit" id="login-btn" class="btn btn-primary btn-full">
+                        <span class="btn-text">Đăng nhập</span>
+                        <span class="btn-loader" style="display:none;"></span>
+                    </button>
+                </form>
+
+                <!-- Register Form -->
+                <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
+                    <div class="form-group">
+                        <label for="register-name">Tên hiển thị</label>
+                        <input type="text" id="register-name" placeholder="Nguyễn Văn A" required minlength="2"
+                            maxlength="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email</label>
+                        <input type="email" id="register-email" placeholder="email@example.com" required
+                            autocomplete="email">
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Mật khẩu</label>
+                        <input type="password" id="register-password" placeholder="Tối thiểu 6 ký tự" required
+                            minlength="6" maxlength="128">
+                    </div>
+                    <button type="submit" id="register-btn" class="btn btn-primary btn-full">
+                        <span class="btn-text">Tạo tài khoản</span>
+                        <span class="btn-loader" style="display:none;"></span>
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MAIN APP — Chat / Documents / Guide                        -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div id="main-app" class="page">
+
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-brand">
+                    <svg width="28" height="28" viewBox="0 0 48 48" fill="none">
+                        <rect width="48" height="48" rx="12" fill="currentColor" />
+                        <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24" stroke="#fff"
+                            stroke-width="2.5" stroke-linecap="round" />
+                        <circle cx="24" cy="24" r="2" fill="#fff" />
+                        <path d="M24 26V34" stroke="#fff" stroke-width="2" stroke-linecap="round" />
+                    </svg>
+                    <span>AI Agent</span>
+                </div>
+                <button id="sidebar-toggle-close" class="btn-icon" onclick="toggleSidebar()" title="Đóng sidebar">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                </button>
+            </div>
+
+            <button id="new-chat-btn" class="btn btn-new-chat" onclick="createNewSession()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span>Cuộc trò chuyện mới</span>
+            </button>
+
+            <div class="sidebar-sessions">
+                <div class="sidebar-section-title">Lịch sử trò chuyện</div>
+                <div id="sessions-list" class="sessions-list">
+                    <!-- Sessions sẽ được render bởi JS -->
+                    <div class="empty-state small">
+                        <p>Chưa có cuộc trò chuyện nào</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div id="user-info" class="user-info" onclick="toggleUserMenu()">
+                    <div id="user-avatar" class="user-avatar">U</div>
+                    <div class="user-details">
+                        <span id="user-name" class="user-name">User</span>
+                        <span id="user-email" class="user-email">user@email.com</span>
+                    </div>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path
+                            d="M12 13a1 1 0 100-2 1 1 0 000 2zM12 6a1 1 0 100-2 1 1 0 000 2zM12 20a1 1 0 100-2 1 1 0 000 2z" />
+                    </svg>
+                </div>
+                <div id="user-menu" class="user-menu" style="display:none;">
+                    <button onclick="toggleTheme()" class="user-menu-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
+                        </svg>
+                        <span id="theme-label">Chế độ tối</span>
+                    </button>
+                    <button onclick="handleLogout()" class="user-menu-item danger">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+                        </svg>
+                        <span>Đăng xuất</span>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="main-header">
+                <div class="header-left">
+                    <button id="sidebar-toggle-open" class="btn-icon" onclick="toggleSidebar()" title="Mở sidebar">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M3 12h18M3 6h18M3 18h18" />
+                        </svg>
+                    </button>
+                    <h2 id="chat-title" class="chat-title">Cuộc trò chuyện mới</h2>
+                </div>
+                <div class="header-actions">
+                    <button id="docs-btn" class="btn btn-ghost" onclick="openPanel('documents')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                            <polyline points="14 2 14 8 20 8" />
+                        </svg>
+                        <span>Tài liệu</span>
+                    </button>
+                    <button id="guide-btn" class="btn btn-ghost" onclick="openPanel('guide')">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3M12 17h.01" />
+                        </svg>
+                        <span>Hướng dẫn</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Chat Area -->
+            <div id="chat-area" class="chat-area">
+                <!-- Welcome State -->
+                <div id="welcome-state" class="welcome-state">
+                    <div class="welcome-icon">
+                        <svg width="64" height="64" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="16" fill="var(--color-bg-tertiary)" />
+                            <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24"
+                                stroke="var(--color-text-primary)" stroke-width="2" stroke-linecap="round" />
+                            <path d="M18 24C18 20.686 20.686 18 24 18C27.314 18 30 20.686 30 24"
+                                stroke="var(--color-text-secondary)" stroke-width="1.5" stroke-linecap="round" />
+                            <circle cx="24" cy="24" r="2.5" fill="var(--color-text-primary)" />
+                            <path d="M24 27V34" stroke="var(--color-text-primary)" stroke-width="2"
+                                stroke-linecap="round" />
+                        </svg>
+                    </div>
+                    <h2>Xin chào! Tôi là AI Agent của bạn</h2>
+                    <p>Tôi có thể giúp bạn phân tích tài liệu, trả lời câu hỏi, và tìm kiếm thông tin. Hãy bắt đầu bằng
+                        cách upload tài liệu hoặc đặt câu hỏi.</p>
+                    <div class="welcome-suggestions">
+                        <button class="suggestion-chip"
+                            onclick="sendSuggestion('Hãy giới thiệu về các tính năng của bạn')">✨ Khám phá tính
+                            năng</button>
+                        <button class="suggestion-chip" onclick="openPanel('documents')">📄 Upload tài liệu</button>
+                        <button class="suggestion-chip" onclick="openPanel('guide')">📖 Xem hướng dẫn</button>
+                    </div>
+                </div>
+
+                <!-- Messages Container -->
+                <div id="messages-container" class="messages-container" style="display:none;">
+                    <!-- Messages sẽ được render bởi JS -->
+                </div>
+
+                <!-- Typing Indicator -->
+                <div id="typing-indicator" class="typing-indicator" style="display:none;">
+                    <div class="typing-avatar">
+                        <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
+                            <rect width="48" height="48" rx="12" fill="currentColor" />
+                            <circle cx="24" cy="24" r="3" fill="#fff" />
+                        </svg>
+                    </div>
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                    <span class="typing-text">Agent đang suy nghĩ...</span>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="chat-input-container">
+                <form id="chat-form" class="chat-form" onsubmit="handleSendMessage(event)">
+                    <div class="input-wrapper">
+                        <textarea id="chat-input" class="chat-input" placeholder="Nhập câu hỏi của bạn..." rows="1"
+                            maxlength="2000"></textarea>
+                        <button type="submit" id="send-btn" class="btn-send" disabled title="Gửi tin nhắn (Enter)">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="input-hint">
+                        <span>Enter để gửi • Shift+Enter xuống dòng</span>
+                    </div>
+                </form>
+            </div>
+        </main>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- DOCUMENTS PANEL                                        -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div id="documents-panel" class="slide-panel">
+            <div class="panel-header">
+                <h3>Tài liệu của tôi</h3>
+                <button class="btn-icon" onclick="closePanel('documents')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="panel-body">
+                <!-- Upload Zone -->
+                <div id="upload-zone" class="upload-zone" ondragover="handleDragOver(event)"
+                    ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+                    <input type="file" id="file-input" accept=".pdf,.docx,.csv,.md" style="display:none;"
+                        onchange="handleFileSelect(event)">
+                    <div class="upload-icon">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                        </svg>
+                    </div>
+                    <p class="upload-text">Kéo thả file vào đây</p>
+                    <p class="upload-subtext">hoặc <button type="button" class="upload-browse"
+                            onclick="document.getElementById('file-input').click()">chọn từ máy tính</button></p>
+                    <p class="upload-formats">Hỗ trợ: PDF, DOCX, CSV, MD</p>
+                </div>
+
+                <!-- Upload Progress -->
+                <div id="upload-progress" class="upload-progress" style="display:none;">
+                    <div class="progress-info">
+                        <span id="upload-filename" class="progress-filename">file.pdf</span>
+                        <span id="upload-status" class="progress-status">Đang xử lý...</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                </div>
+
+                <!-- Documents List -->
+                <div class="documents-section">
+                    <h4 class="section-title">Tài liệu đã upload</h4>
+                    <div id="documents-list" class="documents-list">
+                        <div class="empty-state">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+                                stroke="var(--color-text-quaternary)" stroke-width="1">
+                                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                                <polyline points="14 2 14 8 20 8" />
+                            </svg>
+                            <p>Chưa có tài liệu nào</p>
+                            <p class="empty-state-hint">Upload tài liệu để AI Agent có thể phân tích và trả lời câu hỏi
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <!-- GUIDE PANEL                                            -->
+        <!-- ═══════════════════════════════════════════════════════ -->
+        <div id="guide-panel" class="slide-panel">
+            <div class="panel-header">
+                <h3>Hướng dẫn sử dụng</h3>
+                <button class="btn-icon" onclick="closePanel('guide')">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <div class="panel-body guide-content">
+                <div class="guide-section">
+                    <div class="guide-step">
+                        <div class="step-number">1</div>
+                        <div class="step-content">
+                            <h4>Đăng ký & Đăng nhập</h4>
+                            <p>Tạo tài khoản với email và mật khẩu. Sau khi đăng nhập, bạn sẽ được truy cập toàn bộ tính
+                                năng của hệ thống AI Agent.</p>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="step-number">2</div>
+                        <div class="step-content">
+                            <h4>Upload tài liệu</h4>
+                            <p>Tải lên các file tài liệu của bạn (PDF, DOCX, CSV, MD). AI Agent sẽ tự động phân tích,
+                                chia nhỏ nội dung và lưu vào cơ sở kiến thức cá nhân.</p>
+                            <div class="guide-tip">
+                                <strong>💡 Mẹo:</strong> Bạn có thể kéo thả file trực tiếp vào vùng upload để tiết kiệm
+                                thời gian.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="step-number">3</div>
+                        <div class="step-content">
+                            <h4>Trò chuyện với AI</h4>
+                            <p>Đặt câu hỏi về nội dung tài liệu đã upload hoặc bất kỳ chủ đề nào. AI Agent sẽ tìm kiếm
+                                trong tài liệu của bạn và trả lời chính xác.</p>
+                            <div class="guide-tip">
+                                <strong>💡 Mẹo:</strong> Câu hỏi càng cụ thể, câu trả lời càng chính xác.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="step-number">4</div>
+                        <div class="step-content">
+                            <h4>Quản lý cuộc trò chuyện</h4>
+                            <p>Mỗi cuộc trò chuyện được lưu thành một session riêng. Bạn có thể:</p>
+                            <ul>
+                                <li>Tạo cuộc trò chuyện mới bằng nút <strong>"+ Cuộc trò chuyện mới"</strong></li>
+                                <li>Chuyển đổi giữa các cuộc trò chuyện cũ trong sidebar</li>
+                                <li>Xóa cuộc trò chuyện không cần thiết</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <div class="guide-step">
+                        <div class="step-number">5</div>
+                        <div class="step-content">
+                            <h4>Phím tắt</h4>
+                            <div class="shortcuts-grid">
+                                <div class="shortcut"><kbd>Enter</kbd> <span>Gửi tin nhắn</span></div>
+                                <div class="shortcut"><kbd>Shift+Enter</kbd> <span>Xuống dòng</span></div>
+                                <div class="shortcut"><kbd>Ctrl+N</kbd> <span>Cuộc trò chuyện mới</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="guide-section">
+                    <h4>Các loại file được hỗ trợ</h4>
+                    <div class="file-types-grid">
+                        <div class="file-type-card">
+                            <div class="file-icon pdf">PDF</div>
+                            <span>Tài liệu PDF</span>
+                        </div>
+                        <div class="file-type-card">
+                            <div class="file-icon docx">DOC</div>
+                            <span>Word Document</span>
+                        </div>
+                        <div class="file-type-card">
+                            <div class="file-icon csv">CSV</div>
+                            <span>Bảng tính CSV</span>
+                        </div>
+                        <div class="file-type-card">
+                            <div class="file-icon md">MD</div>
+                            <span>Markdown</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Confirm Dialog -->
+    <div id="confirm-dialog" class="confirm-overlay" style="display:none;">
+        <div class="confirm-dialog">
+            <h4 id="confirm-title">Xác nhận</h4>
+            <p id="confirm-message">Bạn có chắc chắn?</p>
+            <div class="confirm-actions">
+                <button id="confirm-cancel" class="btn btn-ghost" onclick="closeConfirmDialog()">Hủy</button>
+                <button id="confirm-ok" class="btn btn-danger">Xác nhận</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/chat.js"></script>
+    <script src="js/documents.js"></script>
+    <script src="js/sessions.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
