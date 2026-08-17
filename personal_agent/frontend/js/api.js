@@ -2,31 +2,31 @@
  * API Client for Personal AI Agent
  */
 
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = '/api';
 
 const API = {
     // ─── Token Management ───
     getTokens() {
         return {
             access: localStorage.getItem('access_token'),
-            refresh: localStorage.getItem('refresh_token')
+            refresh: null // Refresh token is now handled securely via HttpOnly cookie
         };
     },
 
     setTokens(access, refresh) {
         if (access) localStorage.setItem('access_token', access);
-        if (refresh) localStorage.setItem('refresh_token', refresh);
+        // We no longer set refresh token manually in document.cookie
     },
 
     clearTokens() {
         localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
+        // Refresh token HttpOnly cookie is cleared by the server during logout
     },
 
     // ─── Base Fetch Wrapper ───
     async fetchWithAuth(endpoint, options = {}) {
         let { access } = this.getTokens();
-        
+
         const headers = new Headers(options.headers || {});
         if (access) {
             headers.set('Authorization', `Bearer ${access}`);
@@ -59,19 +59,17 @@ const API = {
     },
 
     async refreshToken() {
-        const { refresh } = this.getTokens();
-        if (!refresh) return false;
-
+        // No need to check for refresh token in frontend, we trust the HttpOnly cookie
         try {
             const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ refresh_token: refresh })
+                credentials: 'include' // This ensures the HttpOnly cookie is sent with the request
             });
 
             if (response.ok) {
                 const data = await response.json();
-                this.setTokens(data.access_token, data.refresh_token);
+                this.setTokens(data.access_token);
                 return true;
             }
         } catch (e) {
@@ -81,7 +79,7 @@ const API = {
     },
 
     // ─── API Endpoints ───
-    
+
     auth: {
         async login(email, password) {
             // OAuth2 Form format
@@ -94,7 +92,7 @@ const API = {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                 body: formData
             });
-            
+
             if (!res.ok) {
                 const error = await res.json();
                 throw new Error(error.detail || 'Login failed');
@@ -108,7 +106,7 @@ const API = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username: name, email, password })
             });
-            
+
             if (!res.ok) {
                 const error = await res.json();
                 throw new Error(error.detail || 'Registration failed');
@@ -121,16 +119,14 @@ const API = {
             if (!res.ok) throw new Error('Failed to get user profile');
             return res.json();
         },
-        
+
         async logout() {
-            const { refresh } = API.getTokens();
-            if (refresh) {
-                await API.fetchWithAuth('/auth/logout', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refresh_token: refresh })
-                }).catch(() => {}); // ignore errors on logout
-            }
+            await API.fetchWithAuth('/auth/logout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include' // Tells browser to send the HttpOnly cookie for the server to clear
+            }).catch(() => { }); // ignore errors on logout
+            
             API.clearTokens();
         }
     },
@@ -148,7 +144,7 @@ const API = {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            
+
             if (!res.ok) {
                 const error = await res.json();
                 throw new Error(error.detail?.error || error.detail || 'Chat request failed');
@@ -202,7 +198,7 @@ const API = {
                 });
 
                 xhr.addEventListener('error', () => reject(new Error('Network error during upload')));
-                
+
                 xhr.open('POST', `${API_BASE_URL}/documents/upload`);
                 if (access) {
                     xhr.setRequestHeader('Authorization', `Bearer ${access}`);

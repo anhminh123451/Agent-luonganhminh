@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str
     CHROMA_DB_PATH: str = "./data/chroma_db"
     COLLECTION_NAME: str = "user_data"
+    # ChromaDB Remote (Fly.io) 
+    CHROMA_PORT: int = 443
     MODEL_LLM: str = "gemini-3.5-flash"  # Model chính cho Gemini
     GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Model cho Groq
     LLM_PROVIDER: str = "gemini"  # Provider chính: "gemini" hoặc "groq"

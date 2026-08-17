@@ -93,7 +93,7 @@ class VectorStore:
         self._init_store()
 
     def _init_store(self) -> None:
-        """Khởi tạo ChromaDB persistent client và collection."""
+        """Khởi tạo ChromaDB client — tự động chọn Local hoặc Remote."""
         try:
             import chromadb
         except ImportError as e:
@@ -102,44 +102,71 @@ class VectorStore:
                 details={"error": str(e)},
             ) from e
 
-        # Lấy config values
-        if self._db_path is None:
-            self._db_path = settings.CHROMA_DB_PATH
+        # Lấy collection name từ config nếu chưa set
         if self._col_name is None:
             self._col_name = settings.COLLECTION_NAME
 
-        # Chuẩn hóa path: resolve relative → absolute, tránh lỗi Windows
-        self._db_path = os.path.abspath(self._db_path)
-
-        # Kiểm tra: nếu đã tồn tại FILE (không phải thư mục) cùng tên → lỗi rõ ràng
-        if os.path.exists(self._db_path) and not os.path.isdir(self._db_path):
-            raise VectorStoreError(
-                f"Path '{self._db_path}' exists but is a FILE, not a directory. "
-                f"ChromaDB requires a directory. Delete this file and retry.",
-                details={"db_path": self._db_path},
-            )
-
-        # Tạo thư mục nếu chưa có
-        os.makedirs(self._db_path, exist_ok=True)
-
         try:
-            self._client = chromadb.PersistentClient(path=self._db_path)
+            if settings.CHROMA_HOST:
+                # ── Remote mode: kết nối ChromaDB trên Fly.io ──
+                auth_header = {}
+                if settings.CHROMA_AUTH_TOKEN:
+                    auth_header = {
+                        "Authorization": f"Bearer {settings.CHROMA_AUTH_TOKEN}"
+                    }
+
+                self._client = chromadb.HttpClient(
+                    host=settings.CHROMA_HOST,
+                    port=settings.CHROMA_PORT,
+                    ssl=True,
+                    headers=auth_header,
+                )
+                logger.info(
+                    f"VectorStore (ChromaDB) connected to REMOTE: "
+                    f"https://{settings.CHROMA_HOST}:{settings.CHROMA_PORT}"
+                )
+            else:
+                # ── Local mode: PersistentClient (dev) ──
+                if self._db_path is None:
+                    self._db_path = settings.CHROMA_DB_PATH
+
+                # Chuẩn hóa path: resolve relative → absolute, tránh lỗi Windows
+                self._db_path = os.path.abspath(self._db_path)
+
+                # Kiểm tra: nếu đã tồn tại FILE (không phải thư mục) cùng tên → lỗi rõ ràng
+                if os.path.exists(self._db_path) and not os.path.isdir(self._db_path):
+                    raise VectorStoreError(
+                        f"Path '{self._db_path}' exists but is a FILE, not a directory. "
+                        f"ChromaDB requires a directory. Delete this file and retry.",
+                        details={"db_path": self._db_path},
+                    )
+
+                # Tạo thư mục nếu chưa có
+                os.makedirs(self._db_path, exist_ok=True)
+
+                self._client = chromadb.PersistentClient(path=self._db_path)
+                logger.info(
+                    f"VectorStore (ChromaDB) initialized LOCAL: "
+                    f"path={self._db_path}"
+                )
+
             self._collection = self._client.get_or_create_collection(
                 name=self._col_name,
             )
 
             doc_count = self._collection.count()
             logger.info(
-                f"VectorStore (ChromaDB) initialized: "
-                f"path={self._db_path}, collection={self._col_name}, "
-                f"documents={doc_count}"
+                f"Collection '{self._col_name}' ready — {doc_count} documents"
             )
 
+        except VectorStoreError:
+            raise
         except Exception as e:
             raise VectorStoreError(
-                "Failed to initialize ChromaDB persistent client",
+                "Failed to initialize ChromaDB client",
                 details={
-                    "db_path": self._db_path,
+                    "mode": "remote" if settings.CHROMA_HOST else "local",
+                    "host": settings.CHROMA_HOST or "(local)",
                     "collection_name": self._col_name,
                     "error": str(e),
                 },

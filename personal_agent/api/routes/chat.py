@@ -59,7 +59,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session
 
 from api.dependencies import (
     ChatServiceDep,
@@ -175,7 +175,7 @@ async def chat(
     current_user: CurrentUserDep,
     service: ChatServiceDep,
     request_id: RequestIdDep,
-    db: DBSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ) -> ChatResponse:
     """
     Xử lý chat request — delegate cho ChatService.

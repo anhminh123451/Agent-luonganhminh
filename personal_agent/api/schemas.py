@@ -475,29 +475,14 @@ class TokenResponse(BaseModel):
     access_token: str = Field(
         ..., description="JWT access token (dùng cho Authorization header)."
     )
-    refresh_token: str = Field(
-        ..., description="JWT refresh token (dùng để làm mới access token)."
+    refresh_token: str | None = Field(
+        default=None, description="JWT refresh token (đã chuyển sang dùng HttpOnly cookie, field này có thể bị loại bỏ)."
     )
     token_type: str = Field(
         default="bearer", description="Loại token (luôn là 'bearer')."
     )
 
-
-class RefreshRequest(BaseModel):
-    """Request body cho POST /auth/refresh."""
-
-    refresh_token: str = Field(
-        ..., description="Refresh token hiện tại."
-    )
-
-
-class LogoutRequest(BaseModel):
-    """Request body cho POST /auth/logout."""
-
-    refresh_token: str = Field(
-        ..., description="Refresh token cần thu hồi."
-    )
-
+# Removed RefreshRequest and LogoutRequest as refresh_token will be read from cookies.
 
 class UserResponse(BaseModel):
     """Response chứa thông tin user (không bao gồm password)."""

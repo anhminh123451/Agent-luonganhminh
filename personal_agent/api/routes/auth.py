@@ -33,7 +33,7 @@ Tham khảo:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -45,8 +45,6 @@ from services.auth_service import AuthService
 from api.schemas import (
     RegisterRequest,
     TokenResponse,
-    RefreshRequest,
-    LogoutRequest,
     UserResponse,
     MessageResponse,
 )
@@ -114,6 +112,7 @@ def register(
 @limiter.limit("5/minute")
 def login(
     request: Request,
+    response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
 ):
@@ -124,7 +123,7 @@ def login(
 
     **Lưu ý:** Field ``username`` trong form chính là **email** của user.
 
-    Trả về cặp access token + refresh token.
+    Trả về access token trong body, refresh token được set vào HttpOnly cookie.
     """
     service = AuthService(db)
     tokens = service.login(
@@ -134,7 +133,18 @@ def login(
 
     logger.info(f"[LOGIN] User logged in: {form_data.username}")
 
-    return TokenResponse(**tokens)
+    # Set refresh_token vào HttpOnly cookie (hết hạn 7 ngày)
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=True,  # Set True nếu chạy HTTPS/Production
+        samesite="lax",
+        max_age=7 * 24 * 60 * 60,
+        path="/",
+    )
+
+    return TokenResponse(access_token=tokens["access_token"])
 
 
 @router.post(
@@ -147,21 +157,41 @@ def login(
     },
 )
 def refresh_token(
-    request: RefreshRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
-    """Làm mới access token bằng refresh token.
+    """Làm mới access token bằng refresh token từ HttpOnly cookie.
 
+    - Lấy refresh token từ cookie.
     - Revoke refresh token cũ.
     - Sinh cặp access + refresh token mới.
     - Đảm bảo rotation: mỗi refresh token chỉ sử dụng được 1 lần.
     """
+    refresh_token_cookie = request.cookies.get("refresh_token")
+    if not refresh_token_cookie:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Không tìm thấy refresh token trong cookie.",
+        )
+
     service = AuthService(db)
-    tokens = service.refresh(request.refresh_token)
+    tokens = service.refresh(refresh_token_cookie)
 
     logger.info("[REFRESH] Tokens refreshed successfully")
 
-    return TokenResponse(**tokens)
+    # Update HttpOnly cookie với token mới
+    response.set_cookie(
+        key="refresh_token",
+        value=tokens["refresh_token"],
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=7 * 24 * 60 * 60,
+        path="/",
+    )
+
+    return TokenResponse(access_token=tokens["access_token"])
 
 
 @router.post(
@@ -174,18 +204,27 @@ def refresh_token(
     },
 )
 def logout(
-    request: LogoutRequest,
+    request: Request,
+    response: Response,
     db: Session = Depends(get_db),
 ):
-    """Đăng xuất — thu hồi refresh token.
+    """Đăng xuất — thu hồi refresh token từ cookie.
 
-    Client nên xóa cả access token và refresh token ở phía client sau khi
-    gọi endpoint này.
+    Client nên xóa cả access token ở phía client sau khi
+    gọi endpoint này. Refresh cookie sẽ tự động bị server xóa.
     """
-    service = AuthService(db)
-    service.logout(request.refresh_token)
+    refresh_token_cookie = request.cookies.get("refresh_token")
+    
+    if refresh_token_cookie:
+        service = AuthService(db)
+        try:
+            service.logout(refresh_token_cookie)
+            logger.info("[LOGOUT] User logged out successfully")
+        except Exception as e:
+            logger.warning(f"[LOGOUT] Warning during logout: {e}")
 
-    logger.info("[LOGOUT] User logged out successfully")
+    # Xóa HttpOnly cookie
+    response.delete_cookie(key="refresh_token", path="/")
 
     return MessageResponse(message="Đăng xuất thành công.")
 

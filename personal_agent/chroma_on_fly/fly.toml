@@ -1,0 +1,27 @@
+app = "agent-ai-chromadb"
+primary_region = "sin"              # Khu vực Singapore (gần Việt Nam, độ trễ thấp)
+
+[build]
+  image = "chromadb/chroma:latest"
+
+[env]
+  IS_PERSISTENT = "TRUE"
+  PERSIST_DIRECTORY = "/data"
+  ANONYMIZED_TELEMETRY = "False"
+  CHROMA_SERVER_AUTHN_PROVIDER = "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
+  CHROMA_AUTH_TOKEN_TRANSPORT_HEADER = "Authorization"
+
+[mounts]
+  source = "chroma_storage"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
