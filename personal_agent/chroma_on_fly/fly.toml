@@ -1,27 +1,32 @@
-app = "agent-ai-chromadb"
-primary_region = "sin"              # Khu vực Singapore (gần Việt Nam, độ trễ thấp)
+# fly.toml app configuration file generated for agent-ai-chromadb on 2026-08-17T23:35:37+07:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'agent-ai-chromadb'
+primary_region = 'sin'
 
 [build]
-  image = "chromadb/chroma:latest"
+  image = 'chromadb/chroma:latest'
 
 [env]
-  IS_PERSISTENT = "TRUE"
-  PERSIST_DIRECTORY = "/data"
-  ANONYMIZED_TELEMETRY = "False"
-  CHROMA_SERVER_AUTHN_PROVIDER = "chromadb.auth.token_authn.TokenAuthenticationServerProvider"
-  CHROMA_AUTH_TOKEN_TRANSPORT_HEADER = "Authorization"
+  ANONYMIZED_TELEMETRY = 'False'
+  CHROMA_AUTH_TOKEN_TRANSPORT_HEADER = 'Authorization'
+  CHROMA_SERVER_AUTHN_PROVIDER = 'chromadb.auth.token_authn.TokenAuthenticationServerProvider'
+  IS_PERSISTENT = 'TRUE'
+  PERSIST_DIRECTORY = '/data'
 
-[mounts]
-  source = "chroma_storage"
-  destination = "/data"
+[[mounts]]
+  source = 'chroma_storage'
+  destination = '/data'
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'

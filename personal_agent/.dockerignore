@@ -9,6 +9,7 @@ __pycache__
 .pytest_cache
 logs/
 chroma_db/
+chroma_on_fly/
 database/
 *.egg-info
 build/
