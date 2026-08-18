@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     CHROMA_PORT: int = 443
     CHROMA_AUTH_TOKEN: str = ""
     MODEL_LLM: str = "gemini-3.5-flash"  # Model chính cho Gemini
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Model cho Groq
+    GROQ_MODEL: str = "openai/gpt-oss-120b"  # Model cho Groq
     LLM_PROVIDER: str = "gemini"  # Provider chính: "gemini" hoặc "groq"
     LLM_FALLBACK_ENABLED: bool = True  # Tự động fallback khi hết quota
     EMBEDDING_PROVIDER: str = "gemini"  # Provider embedding (gemini, openai, ...)
