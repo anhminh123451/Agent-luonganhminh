@@ -8,7 +8,7 @@ dependencies = [
     "chromadb>=1.5.9",
     "ddgs>=9.14.4",
     "fastapi>=0.139.0",
-    "google-genai>=2.8.0",
+    "openai>=1.30.0",
     "langchain-core>=1.4.8",
     "langchain-text-splitters>=1.1.2",
     "langgraph>=1.2.7",
@@ -26,7 +26,7 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "python-multipart>=0.0.20",
     "slowapi>=0.1.10",
-    "groq>=0.25.0",
+
 ]
 
 

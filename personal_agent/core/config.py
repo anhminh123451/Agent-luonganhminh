@@ -2,18 +2,19 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    GEMINI_API_KEY: str
-    GROQ_API_KEY: str
+    # DeepSeek LLM
+    DEEPSEEK_API_KEY: str
+    DEEPSEEK_MODEL: str = "deepseek-flash"  # DeepSeek V4 Flash
+
+    # Gemini (chỉ dùng cho Embedding)
+    GEMINI_API_KEY: str = ""
+
     CHROMA_DB_PATH: str = "./data/chroma_db"
     COLLECTION_NAME: str = "user_data"
     # ChromaDB Remote (Fly.io) 
     CHROMA_HOST: str = ""
     CHROMA_PORT: int = 443
     CHROMA_AUTH_TOKEN: str = ""
-    MODEL_LLM: str = "gemini-3.5-flash"  # Model chính cho Gemini
-    GROQ_MODEL: str = "openai/gpt-oss-120b"  # Model cho Groq
-    LLM_PROVIDER: str = "gemini"  # Provider chính: "gemini" hoặc "groq"
-    LLM_FALLBACK_ENABLED: bool = True  # Tự động fallback khi hết quota
     EMBEDDING_PROVIDER: str = "gemini"  # Provider embedding (gemini, openai, ...)
     EMBEDDING_MODEL: str = "gemini-embedding-2"  # Model embedding cụ thể
     CHECKPOINT_DB_PATH: str = "./data/checkpoints.sqlite"

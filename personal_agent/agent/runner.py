@@ -20,7 +20,6 @@ ReAct Loop trong call_agent():
     │    - THOUGHT: Ghi nhận suy luận, tiếp tục loop               │
     │    - ACTION: Parse JSON → tool_name + tool_args               │
     │    - ANSWER: Trích xuất final_answer → kết thúc               │
-    │    - HANDOFF: Parse target + reason → chuyển giao             │
     │ 6. Update AgentState với partial state                        │
     └──────────────────────────────────────────────────────────────┘
 
@@ -50,7 +49,7 @@ from typing import Any, cast
 from core.config import settings
 from core.exceptions import AgentStepLimitError, LLMResponseError
 from core.logger import get_logger
-from agent.llm_provider import LLMManager, QuotaExceededError
+from agent.llm_provider import DeepSeekProvider
 
 from agent.state import (
     AgentState,
@@ -72,25 +71,25 @@ logger = get_logger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# LLM CLIENT — Khởi tạo LLM Manager (Gemini + Groq auto-fallback)
+# LLM CLIENT — Khởi tạo DeepSeek Provider
 # ═══════════════════════════════════════════════════════════════════════
 
-def _create_llm_manager() -> LLMManager:
+def _create_deepseek_provider() -> DeepSeekProvider:
     """
-    Tạo LLMManager với primary và fallback providers.
-
-    Primary/fallback được xác định bởi settings.LLM_PROVIDER.
-    Khi primary hết quota, tự động chuyển sang fallback.
+    Tạo DeepSeekProvider từ settings.
 
     Returns:
-        LLMManager instance.
+        DeepSeekProvider instance.
     """
-    manager = LLMManager()
-    logger.info(
-        f"LLM Manager initialized | "
-        f"primary={manager.current_provider} ({manager.current_model})"
+    provider = DeepSeekProvider(
+        api_key=settings.DEEPSEEK_API_KEY,
+        model=settings.DEEPSEEK_MODEL,
     )
-    return manager
+    logger.info(
+        f"DeepSeek Provider initialized | "
+        f"model={provider.model_name}"
+    )
+    return provider
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -101,7 +100,7 @@ def _extract_json_from_text(text: str) -> dict[str, Any] | None:
     """
     Trích xuất JSON object từ text sử dụng brace counting algorithm.
 
-    Khi LLM trả response có chứa JSON (cho ACTION hoặc HANDOFF),
+    Khi LLM trả response có chứa JSON (cho ACTION),
     cần parse chính xác JSON object ngay cả khi có text xung quanh.
 
     Thuật toán:
@@ -150,7 +149,6 @@ def _parse_llm_response(response_text: str) -> dict[str, Any]:
         - THOUGHT: Nội dung suy luận
         - ACTION: {"tool": "...", "args": {...}}
         - ANSWER: Câu trả lời cuối cùng
-        - HANDOFF: {"target": "...", "reason": "..."}
 
     Args:
         response_text: Raw text từ LLM response.
@@ -213,28 +211,8 @@ def _parse_llm_response(response_text: str) -> dict[str, Any]:
             f"ACTION found but JSON parse failed: '{action_text[:100]}'"
         )
 
-    # ── 3. Kiểm tra HANDOFF ───────────────────────────────────────────
-    handoff_match = re.search(
-        r"HANDOFF:\s*(.+)",
-        text,
-        re.DOTALL | re.IGNORECASE,
-    )
-    if handoff_match:
-        handoff_text = handoff_match.group(1).strip()
-        parsed_json = _extract_json_from_text(handoff_text)
 
-        if parsed_json and "target" in parsed_json:
-            logger.info(
-                f"Parsed HANDOFF: target='{parsed_json.get('target')}', "
-                f"reason='{parsed_json.get('reason', 'N/A')}'"
-            )
-            return {
-                "action_type": ActionType.HANDOFF,
-                "content": parsed_json,
-                "raw_response": text,
-            }
-
-    # ── 4. Kiểm tra THOUGHT ──────────────────────────────────────────
+    # ── 3. Kiểm tra THOUGHT ──────────────────────────────────────────
     thought_match = re.search(
         r"THOUGHT:\s*(.+)",
         text,
@@ -316,18 +294,15 @@ class AgentRunner:
     Quản lý việc gọi LLM và xử lý response trong ReAct loop.
 
     AgentRunner là LangGraph node chính — nhận AgentState,
-    gọi LLM (Gemini/Groq), parse response, và trả về partial state update.
-
-    Hỗ trợ auto-fallback: Khi primary provider hết quota,
-    tự động chuyển sang fallback provider.
+    gọi DeepSeek LLM, parse response, và trả về partial state update.
 
     Attributes:
-        _llm_manager: LLMManager quản lý primary + fallback providers.
+        _llm: DeepSeekProvider instance.
 
     Lifecycle:
         1. Khởi tạo 1 lần khi app startup
         2. call_agent() được gọi mỗi bước trong ReAct loop
-        3. LLMManager được reuse cho tất cả requests
+        3. DeepSeekProvider được reuse cho tất cả requests
 
     Ví dụ:
         runner = AgentRunner()
@@ -338,75 +313,76 @@ class AgentRunner:
 
     def __init__(self) -> None:
         """
-        Khởi tạo AgentRunner với LLMManager.
+        Khởi tạo AgentRunner với DeepSeekProvider.
 
-        LLMManager tự động đọc config từ settings:
-            - LLM_PROVIDER: primary provider (gemini/groq)
-            - MODEL_LLM: Gemini model name
-            - GROQ_MODEL: Groq model name
-            - LLM_FALLBACK_ENABLED: Bật/tắt auto-fallback
+        DeepSeekProvider đọc config từ settings:
+            - DEEPSEEK_API_KEY: API key cho DeepSeek
+            - DEEPSEEK_MODEL: Model name (mặc định "deepseek-flash")
         """
-        self._llm_manager = _create_llm_manager()
+        self._llm = _create_deepseek_provider()
 
         logger.info(
             f"AgentRunner initialized | "
-            f"provider={self._llm_manager.current_provider} | "
-            f"model={self._llm_manager.current_model}"
+            f"provider={self._llm.provider_name} | "
+            f"model={self._llm.model_name}"
         )
 
     # ─── Build messages cho LLM ───────────────────────────────────────
 
-    def _build_llm_contents(
+    def _build_llm_messages(
         self,
         state: AgentState,
     ) -> list[dict[str, str]]:
         """
-        Chuyển đổi AgentState messages thành format cho Gemini API.
+        Chuyển đổi AgentState messages thành format cho DeepSeek API (OpenAI-compatible).
 
-        Gemini API sử dụng format:
+        DeepSeek API sử dụng OpenAI format:
             [
-                {"role": "user", "parts": [{"text": "..."}]},
-                {"role": "model", "parts": [{"text": "..."}]},
+                {"role": "system", "content": "..."},
+                {"role": "user", "content": "..."},
+                {"role": "assistant", "content": "..."},
             ]
 
         Mapping từ MessageRole:
-            - SYSTEM → prepend vào user message đầu tiên
+            - SYSTEM → role="system"
             - USER → role="user"
-            - ASSISTANT → role="model"
-            - OBSERVATION → role="user" (với prefix)
+            - ASSISTANT → role="assistant"
+            - OBSERVATION → role="user" (tool kết quả được trả về như user message)
 
         Args:
             state: AgentState hiện tại.
 
         Returns:
-            List of content dicts cho Gemini API.
+            List of message dicts cho DeepSeek API.
         """
-        contents = []
-        system_prompt = None
+        messages = []
 
         for msg in state["messages"]:
             role = msg["role"]
             content = msg["content"]
 
             if role == MessageRole.SYSTEM.value:
-                system_prompt = content
+                messages.append({
+                    "role": "system",
+                    "content": content,
+                })
             elif role == MessageRole.USER.value:
-                contents.append({
+                messages.append({
                     "role": "user",
-                    "parts": [{"text": content}],
+                    "content": content,
                 })
             elif role == MessageRole.ASSISTANT.value:
-                contents.append({
-                    "role": "model",
-                    "parts": [{"text": content}],
+                messages.append({
+                    "role": "assistant",
+                    "content": content,
                 })
             elif role == MessageRole.OBSERVATION.value:
-                contents.append({
+                messages.append({
                     "role": "user",
-                    "parts": [{"text": content}],
+                    "content": content,
                 })
 
-        return contents, system_prompt
+        return messages
 
     # ─── Core call_agent logic ────────────────────────────────────────
 
@@ -449,14 +425,6 @@ class AgentRunner:
                 - final_answer = parsed answer
                 - messages += [assistant message]
                 - status = DONE
-
-            HANDOFF:
-                - current_step += 1
-                - current_action = HANDOFF
-                - handoff_target = parsed target
-                - handoff_reason = parsed reason
-                - messages += [assistant message]
-                - status = HANDOFF
         """
         current_step = state["current_step"]
         session_preview = state["session_id"][:8]
@@ -547,9 +515,9 @@ class AgentRunner:
                 f"Injected step limit warning at step {current_step}"
             )
 
-        # ── 4. Gọi LLM (với retry khi response rỗng + auto-fallback) ──
+        # ── 4. Gọi DeepSeek LLM (với retry khi response rỗng) ────────
         try:
-            contents, system_instruction = self._build_llm_contents(
+            llm_messages = self._build_llm_messages(
                 {**state, "messages": messages}
             )
 
@@ -559,10 +527,8 @@ class AgentRunner:
             response_text = None
 
             for attempt in range(1, max_retries + 1):
-                # Gọi LLM qua LLMManager (auto-fallback khi quota error)
-                response_text = self._llm_manager.generate_with_fallback(
-                    contents=contents,
-                    system_instruction=system_instruction,
+                response_text = self._llm.generate(
+                    messages=llm_messages,
                     temperature=0.3,
                     max_tokens=2048,
                 )
@@ -574,7 +540,7 @@ class AgentRunner:
                 if attempt < max_retries:
                     logger.warning(
                         f"LLM returned empty response | "
-                        f"provider={self._llm_manager.current_provider} | "
+                        f"provider={self._llm.provider_name} | "
                         f"step={current_step} | "
                         f"attempt={attempt}/{max_retries} | "
                         f"retrying in {retry_delay}s"
@@ -589,39 +555,19 @@ class AgentRunner:
                     details={
                         "step": current_step,
                         "retries": max_retries,
-                        "provider": self._llm_manager.current_provider,
+                        "provider": self._llm.provider_name,
                     },
                 )
 
             logger.debug(
                 f"LLM response received | "
-                f"provider={self._llm_manager.current_provider} | "
-                f"model={self._llm_manager.current_model} | "
+                f"provider={self._llm.provider_name} | "
+                f"model={self._llm.model_name} | "
                 f"length={len(response_text)} chars"
             )
 
         except LLMResponseError:
             raise
-        except QuotaExceededError as e:
-            logger.error(
-                f"All LLM providers exhausted: {e}", exc_info=True
-            )
-            return {
-                "current_step": current_step + 1,
-                "current_action": ActionType.ANSWER.value,
-                "final_answer": (
-                    "Xin lỗi, tất cả LLM providers đều đã hết quota. "
-                    "Vui lòng thử lại sau ít phút."
-                ),
-                "status": AgentStatus.ERROR.value,
-                "error": f"All providers quota exceeded: {e}",
-                "messages": add_message(
-                    state,
-                    MessageRole.ASSISTANT.value,
-                    "ANSWER: Xin lỗi, tất cả LLM providers đều đã hết quota. "
-                    "Vui lòng thử lại sau ít phút.",
-                ),
-            }
         except Exception as e:
             logger.error(f"LLM call failed: {e}", exc_info=True)
             return {
@@ -684,14 +630,6 @@ class AgentRunner:
                 f"answer='{str(content)[:80]}...'"
             )
 
-        elif action_type == ActionType.HANDOFF:
-            state_update["status"] = AgentStatus.HANDOFF.value
-            state_update["handoff_target"] = content.get("target", "")
-            state_update["handoff_reason"] = content.get("reason", "")
-            logger.info(
-                f"[Step {current_step}] HANDOFF → "
-                f"target='{content.get('target')}'"
-            )
 
         # Log state summary
         summary = get_state_summary(cast(AgentState, {**state, **state_update}))

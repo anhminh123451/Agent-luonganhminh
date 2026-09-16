@@ -113,16 +113,7 @@ class AgentProfile:
 # ═══════════════════════════════════════════════════════════════════════
 
 # ── General Agent — Agent có quyền truy cập tất cả tools ──────────────
-PERSONAL_AGENT = AgentProfile(
-    name="personal_agent",
-    agent_name="AI Assistant",
-    description=(
-        "Trợ lý AI tổng quát với quyền truy cập tất cả tools. "
-        "Phù hợp cho các câu hỏi đa dạng, không giới hạn domain."
-    ),
-    allowed_tools=["document_search","web_search"],
-    metadata={"tier": "default", "domain": "all"},
-)
+
 
 
 
@@ -133,9 +124,7 @@ PERSONAL_AGENT = AgentProfile(
 # PROFILE REGISTRY — Mapping profile_name → AgentProfile
 # ═══════════════════════════════════════════════════════════════════════
 
-PROFILES: dict[str, AgentProfile] = {
-    PERSONAL_AGENT.name: PERSONAL_AGENT,
-}
+PROFILES: dict[str, AgentProfile]
 
 # Profile mặc định khi không chỉ định
 DEFAULT_PROFILE_NAME: str = "personal_agent"

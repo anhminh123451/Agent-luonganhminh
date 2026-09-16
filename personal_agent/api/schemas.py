@@ -53,11 +53,9 @@ class AgentStatusResponse(str, Enum):
     Mapping từ AgentStatus (agent/state.py):
         - done    → agent đã trả lời thành công
         - error   → agent gặp lỗi
-        - handoff → agent chuyển giao (multi-agent, tương lai)
     """
     DONE = "done"
     ERROR = "error"
-    HANDOFF = "handoff"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -236,7 +234,7 @@ class ChatResponse(BaseModel):
 
         Mapping AgentState fields → ChatResponse fields:
             final_answer     → answer
-            status           → status (chỉ lấy done/error/handoff)
+            status           → status (chỉ lấy done/error)
             session_id       → session_id
             current_step     → num_steps
             tool_observations → tool_observations

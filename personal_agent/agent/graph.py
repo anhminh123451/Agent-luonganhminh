@@ -44,7 +44,6 @@ Conditional Routing (should_continue):
     - status == RUNNING       → "call_agent"   (tiếp tục suy luận)
     - status == DONE          → END            (có câu trả lời)
     - status == ERROR         → END            (gặp lỗi)
-    - status == HANDOFF       → END            (chuyển giao, mở rộng sau)
 
 Persistent Conversation Memory (SqliteSaver):
     - Mỗi session_id tương ứng với 1 thread_id trong checkpointer
@@ -123,7 +122,6 @@ def should_continue(state: AgentState) -> str:
         │ RUNNING             │ "call_agent" (tiếp tục loop) │
         │ DONE                │ END (kết thúc, có answer)    │
         │ ERROR               │ END (kết thúc, có lỗi)      │
-        │ HANDOFF             │ END (chuyển giao agent khác) │
         │ (unknown)           │ END (fallback an toàn)       │
         └─────────────────────┴──────────────────────────────┘
 
@@ -177,16 +175,6 @@ def should_continue(state: AgentState) -> str:
         )
         return END
 
-    # ── HANDOFF → chuyển giao cho agent khác ──────────────────────────
-    if status == AgentStatus.HANDOFF.value:
-        target = state.get("handoff_target", "unknown")
-        reason = state.get("handoff_reason", "N/A")
-        logger.info(
-            f"[Step {current_step}] Routing → END (HANDOFF) | "
-            f"target='{target}' | reason='{reason}' | "
-            f"session={session_preview}..."
-        )
-        return END
 
     # ── Fallback — status không nhận diện được ────────────────────────
     logger.warning(
@@ -213,7 +201,7 @@ def build_graph() -> StateGraph:
     Graph structure:
         START → call_agent → should_continue() → call_tool → call_agent
                                                → call_agent (THOUGHT)
-                                               → END (DONE/ERROR/HANDOFF)
+                                                → END (DONE/ERROR)
 
     Returns:
         Compiled StateGraph sẵn sàng invoke.
@@ -431,7 +419,7 @@ def invoke_agent(
             - final_answer: Câu trả lời cuối cùng
             - tool_observations: Danh sách observations
             - current_step: Số bước đã thực hiện
-            - status: Trạng thái cuối (done/error/handoff)
+            - status: Trạng thái cuối (done/error)
             - error: Thông tin lỗi (nếu có)
 
     Raises:

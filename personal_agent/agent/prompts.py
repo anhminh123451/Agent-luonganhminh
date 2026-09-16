@@ -9,7 +9,7 @@ Kiến trúc: Template Pattern với LangChain PromptTemplate
     - SYSTEM_PROMPT_TEMPLATE: System prompt chính cho ReAct agent
     - OBSERVATION_TEMPLATE: Format observation trả về từ tool
     - STEP_LIMIT_WARNING_TEMPLATE: Cảnh báo khi gần hết bước
-    - HANDOFF_TEMPLATE: Template cho HANDOFF action (multi-agent)
+    - Các helper function build prompt hoàn chỉnh
     - Các helper function build prompt hoàn chỉnh
 
 ReAct Loop Prompt Flow:
@@ -17,7 +17,7 @@ ReAct Loop Prompt Flow:
     │ 1. SYSTEM PROMPT (1 lần duy nhất khi khởi tạo)          │
     │    - Vai trò agent + quy tắc ứng xử                     │
     │    - Danh sách AVAILABLE TOOLS                           │
-    │    - Output format (THOUGHT / ACTION / ANSWER / HANDOFF) │
+    │    - Output format (THOUGHT / ACTION / ANSWER)            │
     │    - Few-shot examples                                   │
     ├──────────────────────────────────────────────────────────┤
     │ 2. USER MESSAGE (câu hỏi gốc từ user)                   │
@@ -97,9 +97,6 @@ ACTION: {{"tool": "<tên_tool>", "args": {{"<arg1>": "<value1>", "<arg2>": "<val
 --- Khi đã có đủ thông tin để trả lời ---
 ANSWER: <câu trả lời cuối cùng cho người dùng>
 
---- Khi cần chuyển cho agent khác (multi-agent) ---
-HANDOFF: {{"target": "<tên_agent_đích>", "reason": "<lý do chuyển>"}}
-
 ═══ QUY TRÌNH SUY LUẬN (ReAct) ═══
 
 Bước 1: THOUGHT — Phân tích câu hỏi mới nhất kết hợp với lịch sử cuộc hội thoại phía trên để xác định khách hàng đang muốn gì, thông tin nào ĐÃ CÓ trong lịch sử, và thông tin nào CẦN LẤY THÊM.
@@ -110,7 +107,7 @@ Bước 5: ANSWER hoặc ACTION tiếp (nếu cần thêm thông tin)
 
 ═══ IMPORTANT RULES ═══
 - Bắt buộc ở lượt đầu tiên luôn là dùng document_search ngoại trừ khi người dùng chỉ báo thông tin để nhắc nhở hoặc chào hỏi
-- Mỗi lượt CHỈ ĐƯỢC trả về MỘT action (THOUGHT, ACTION, ANSWER, hoặc HANDOFF)
+- Mỗi lượt CHỈ ĐƯỢC trả về MỘT action (THOUGHT, ACTION hoặc ANSWER)
 - ACTION phải là JSON hợp lệ với key "tool" và "args"
 - Khi nhận OBSERVATION, hãy phân tích kết quả trước khi trả lời
 - Nếu tool trả về lỗi, hãy thử cách khác hoặc thông báo cho khách hàng
@@ -185,19 +182,7 @@ Nếu chưa có đủ thông tin, hãy đưa ra câu trả lời tốt nhất v�
 )
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# HANDOFF TEMPLATE — Template cho multi-agent handoff
-# ═══════════════════════════════════════════════════════════════════════
 
-HANDOFF_TEMPLATE = PromptTemplate(
-    input_variables=["source_agent", "target_agent", "reason", "query"],
-    template="""\
-[HANDOFF] Agent "{source_agent}" chuyển giao cho "{target_agent}".
-Lý do: {reason}
-Câu hỏi gốc: {query}
-
-Hãy tiếp tục xử lý câu hỏi trên với chuyên môn của bạn.""",
-)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -314,41 +299,7 @@ def format_step_limit_warning(
     }).text
 
 
-def format_handoff_message(
-    source_agent: str,
-    target_agent: str,
-    reason: str,
-    query: str,
-) -> str:
-    """
-    Tạo message handoff khi chuyển giao giữa các agent.
 
-    Dùng trong multi-agent architecture (Cấp 2 trong Plan.md)
-    khi agent hiện tại quyết định HANDOFF cho agent khác.
-
-    Args:
-        source_agent: Tên agent hiện tại (đang chuyển giao).
-        target_agent: Tên agent đích (nhận chuyển giao).
-        reason: Lý do chuyển giao.
-        query: Câu hỏi gốc từ user.
-
-    Returns:
-        Chuỗi handoff message.
-
-    Ví dụ:
-        msg = format_handoff_message(
-            source_agent="banking_agent",
-            target_agent="loan_agent",
-            reason="Câu hỏi về vay vốn cần chuyên gia.",
-            query="Tôi muốn vay mua nhà 2 tỷ?",
-        )
-    """
-    return HANDOFF_TEMPLATE.invoke({
-        "source_agent": source_agent,
-        "target_agent": target_agent,
-        "reason": reason,
-        "query": query,
-    }).text
 
 
 def format_error_recovery(

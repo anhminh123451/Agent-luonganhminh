@@ -15,7 +15,7 @@ Tham khảo:
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.orm import Session
 
 from api.dependencies import CurrentUserDep
 from databases.database import get_db
@@ -49,7 +49,7 @@ router = APIRouter(prefix="/sessions", tags=["Sessions"])
 )
 def list_sessions(
     current_user: CurrentUserDep,
-    db: DBSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Liệt kê tất cả sessions hội thoại của user hiện tại.
 
@@ -98,7 +98,7 @@ def list_sessions(
 def delete_session(
     session_key: str,
     current_user: CurrentUserDep,
-    db: DBSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """Xóa một session hội thoại.
 

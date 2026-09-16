@@ -40,10 +40,8 @@ State Fields:
     │   final_answer     — Câu trả lời cuối cùng cho user         │
     │   error            — Thông tin lỗi (nếu có)                 │
     ├─────────────────────────────────────────────────────────────┤
-    │ ROUTING & HANDOFF                                           │
+    │ ROUTING                                                     │
     │   status           — Trạng thái agent (running/done/error)  │
-    │   handoff_target   — Agent đích nếu cần HANDOFF             │
-    │   handoff_reason   — Lý do HANDOFF                          │
     └─────────────────────────────────────────────────────────────┘
 
 Cách sử dụng:
@@ -92,13 +90,11 @@ class AgentStatus(str, Enum):
         - TOOL_CALLING → cần gọi tool (gọi call_tool)
         - DONE → đã có câu trả lời → kết thúc
         - ERROR → gặp lỗi không recover được → kết thúc
-        - HANDOFF → chuyển cho agent khác xử lý (multi-agent)
     """
     RUNNING = "running"
     TOOL_CALLING = "tool_calling"
     DONE = "done"
     ERROR = "error"
-    HANDOFF = "handoff"
 
 
 class ActionType(str, Enum):
@@ -109,14 +105,12 @@ class ActionType(str, Enum):
         THOUGHT: Suy luận về câu hỏi
         ACTION: Gọi tool với arguments
         ANSWER: Trả lời cuối cùng cho user
-        HANDOFF: Chuyển cho agent khác (multi-agent, tương lai)
 
     LLM response phải chứa đúng một trong các action types này.
     """
     THOUGHT = "THOUGHT"
     ACTION = "ACTION"
     ANSWER = "ANSWER"
-    HANDOFF = "HANDOFF"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -238,14 +232,14 @@ class AgentState(TypedDict):
     current_action: str
     """
     Action type hiện tại mà LLM đã quyết định.
-    Giá trị: ActionType enum value (THOUGHT, ACTION, ANSWER, HANDOFF).
+    Giá trị: ActionType enum value (THOUGHT, ACTION, ANSWER).
     Dùng trong should_continue() router để routing.
     """
 
     status: str
     """
     Trạng thái tổng thể của agent.
-    Giá trị: AgentStatus enum value (running, tool_calling, done, error, handoff).
+    Giá trị: AgentStatus enum value (running, tool_calling, done, error).
     Dùng trong should_continue() router để quyết định kết thúc hay tiếp tục.
     """
 
@@ -286,22 +280,6 @@ class AgentState(TypedDict):
     Thông tin lỗi nếu agent gặp vấn đề không recover được.
     Rỗng ("") khi không có lỗi.
     Set khi status == ERROR.
-    """
-
-    # ─── HANDOFF (multi-agent, chuẩn bị cho tương lai) ────────────────
-    handoff_target: str
-    """
-    Tên agent đích khi cần HANDOFF.
-    Rỗng ("") khi không có handoff.
-    Ví dụ: "loan_agent", "escalation_agent".
-    Dùng khi mở rộng sang multi-agent architecture (Cấp 2 trong Plan.md).
-    """
-
-    handoff_reason: str
-    """
-    Lý do HANDOFF cho agent khác.
-    Rỗng ("") khi không có handoff.
-    Ví dụ: "Câu hỏi về vay vốn cần chuyên gia Loan Agent xử lý."
     """
 
 
@@ -388,10 +366,6 @@ def create_initial_state(
         # Output
         "final_answer": "",
         "error": "",
-
-        # Handoff
-        "handoff_target": "",
-        "handoff_reason": "",
     }
 
     logger.info(
@@ -502,5 +476,4 @@ def get_state_summary(state: AgentState) -> dict[str, Any]:
         "n_observations": len(state["tool_observations"]),
         "has_answer": bool(state["final_answer"]),
         "has_error": bool(state["error"]),
-        "handoff_target": state["handoff_target"] or "none",
     }
