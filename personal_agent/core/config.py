@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     # DeepSeek LLM
     DEEPSEEK_API_KEY: str
     DEEPSEEK_MODEL: str = "deepseek-flash"  # DeepSeek V4 Flash
+    MAX_TOKENS_OUTPUT : int = 4000
+    TEMPERATURE: float = 0.7
 
     # Gemini (chỉ dùng cho Embedding)
     GEMINI_API_KEY: str = ""

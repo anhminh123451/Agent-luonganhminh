@@ -102,8 +102,9 @@ class DeepSeekProvider:
     def generate(
         self,
         messages: list[dict[str, str]],
-        temperature: float = 0.3,
-        max_tokens: int = 3000,
+        temperature: float = settings.TEMPERATURE,
+        max_tokens: int = settings.MAX_TOKENS_OUTPUT,
+        user_id: int | None = None,
     ) -> str:
         """
         Gọi DeepSeek API và trả về response text.
@@ -126,12 +127,17 @@ class DeepSeekProvider:
         Raises:
             Exception: Các lỗi từ API (rate limit, network, ...).
         """
+        extra_body = {}
+        if user_id:
+            extra_body["user_id"] = str(user_id)
+            
         try:
             response = self._client.chat.completions.create(
                 model=self._model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                extra_body=extra_body if extra_body else None,
             )
             return response.choices[0].message.content or ""
 

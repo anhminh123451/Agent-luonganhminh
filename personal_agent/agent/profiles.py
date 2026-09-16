@@ -124,7 +124,7 @@ class AgentProfile:
 # PROFILE REGISTRY — Mapping profile_name → AgentProfile
 # ═══════════════════════════════════════════════════════════════════════
 
-PROFILES: dict[str, AgentProfile]
+PROFILES: dict[str, AgentProfile] = {}
 
 # Profile mặc định khi không chỉ định
 DEFAULT_PROFILE_NAME: str = "personal_agent"

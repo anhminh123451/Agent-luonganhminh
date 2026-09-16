@@ -1,4 +1,4 @@
-from google.auth import default
+# from google.auth import default
 from databases.database import Base
 from sqlalchemy import Column, Integer, String, DateTime, Boolean,func,ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column,relationship

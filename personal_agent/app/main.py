@@ -13,8 +13,9 @@ import os
 
 
 setup_tools()
-setup_profiles()
+setup_profiles(yaml_path="config/profiles.yaml")
 # Tạo các bảng trong CSDL (nếu chưa có)
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()

@@ -525,12 +525,14 @@ class AgentRunner:
             max_retries = 3
             retry_delay = 1  # giây, tăng gấp đôi mỗi lần retry
             response_text = None
+            user_id = state.get("user_id")
 
             for attempt in range(1, max_retries + 1):
                 response_text = self._llm.generate(
                     messages=llm_messages,
-                    temperature=0.3,
-                    max_tokens=2048,
+                    temperature=settings.TEMPERATURE,
+                    max_tokens=settings.MAX_TOKENS_OUTPUT,
+                    user_id=user_id
                 )
 
                 if response_text:
