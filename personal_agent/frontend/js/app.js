@@ -5,20 +5,31 @@
 // ─── UI State Management ───
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    document.getElementById(pageId).classList.add('active');
+    const target = document.getElementById(pageId);
+    if (target) target.classList.add('active');
 }
 
 function openPanel(panelId) {
-    // Close other panels
-    document.querySelectorAll('.slide-panel').forEach(p => p.classList.remove('open'));
-    
-    // Open target panel
     const panel = document.getElementById(`${panelId}-panel`);
-    if (panel) {
+    if (!panel) return;
+
+    const wasOpen = panel.classList.contains('open');
+
+    // Close all panels first
+    closeAllPanels();
+
+    // If it wasn't open before, open it now (toggle behavior)
+    if (!wasOpen) {
         panel.classList.add('open');
-        
+
+        // Only activate backdrop overlay on mobile devices
+        if (window.innerWidth <= 768) {
+            const backdrop = document.getElementById('panel-backdrop');
+            if (backdrop) backdrop.classList.add('active');
+        }
+
         // Refresh data if needed
-        if (panelId === 'documents') {
+        if (panelId === 'documents' && typeof loadDocuments === 'function') {
             loadDocuments();
         }
     }
@@ -27,21 +38,45 @@ function openPanel(panelId) {
 function closePanel(panelId) {
     const panel = document.getElementById(`${panelId}-panel`);
     if (panel) panel.classList.remove('open');
+    
+    const anyOpen = document.querySelectorAll('.slide-panel.open').length > 0;
+    if (!anyOpen) {
+        const backdrop = document.getElementById('panel-backdrop');
+        if (backdrop) backdrop.classList.remove('active');
+    }
+}
+
+function closeAllPanels() {
+    document.querySelectorAll('.slide-panel').forEach(p => p.classList.remove('open'));
+    const backdrop = document.getElementById('panel-backdrop');
+    if (backdrop) backdrop.classList.remove('active');
 }
 
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
     sidebar.classList.toggle('open');
+    
+    const backdrop = document.getElementById('sidebar-backdrop');
+    if (backdrop) {
+        if (window.innerWidth <= 768 && sidebar.classList.contains('open')) {
+            backdrop.classList.add('active');
+        } else {
+            backdrop.classList.remove('active');
+        }
+    }
 }
 
 function toggleUserMenu() {
     const menu = document.getElementById('user-menu');
-    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+    if (menu) {
+        menu.style.display = menu.style.display === 'none' || !menu.style.display ? 'block' : 'none';
+    }
 }
 
 function toggleTheme() {
     const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
+    const next = current === 'light' ? 'dark' : 'light';
     
     document.documentElement.setAttribute('data-theme', next);
     localStorage.setItem('theme', next);
@@ -50,7 +85,8 @@ function toggleTheme() {
     if (label) {
         label.textContent = next === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
     }
-    toggleUserMenu(); // Close menu after click
+    const menu = document.getElementById('user-menu');
+    if (menu) menu.style.display = 'none'; // Close menu after click
 }
 
 // ─── Initialization ───
@@ -69,26 +105,36 @@ async function initApp() {
         window.currentUser = user;
         
         // Update UI
-        document.getElementById('user-name').textContent = user.username || 'User';
-        document.getElementById('user-email').textContent = user.email || '';
-        document.getElementById('user-avatar').textContent = (user.username || 'U').charAt(0).toUpperCase();
+        const nameEl = document.getElementById('user-name');
+        const emailEl = document.getElementById('user-email');
+        const avatarEl = document.getElementById('user-avatar');
+        
+        if (nameEl) nameEl.textContent = user.username || 'User';
+        if (emailEl) emailEl.textContent = user.email || '';
+        if (avatarEl) avatarEl.textContent = (user.username || 'U').charAt(0).toUpperCase();
         
         // Restore session if exists
         const savedSessionId = sessionStorage.getItem('active_session');
+        const welcomeState = document.getElementById('welcome-state');
+        const msgContainer = document.getElementById('messages-container');
+        const chatTitle = document.getElementById('chat-title');
+        
         if (savedSessionId) {
             window.currentSessionId = savedSessionId;
-            document.getElementById('welcome-state').style.display = 'none';
-            document.getElementById('messages-container').style.display = 'flex';
-            document.getElementById('chat-title').textContent = 'Cuộc trò chuyện';
+            if (welcomeState) welcomeState.style.display = 'none';
+            if (msgContainer) msgContainer.style.display = 'flex';
+            if (chatTitle) chatTitle.textContent = 'Cuộc trò chuyện';
         } else {
             window.currentSessionId = null;
-            document.getElementById('welcome-state').style.display = 'flex';
-            document.getElementById('messages-container').style.display = 'none';
-            document.getElementById('chat-title').textContent = 'Cuộc trò chuyện mới';
+            if (welcomeState) welcomeState.style.display = 'flex';
+            if (msgContainer) msgContainer.style.display = 'none';
+            if (chatTitle) chatTitle.textContent = 'Cuộc trò chuyện mới';
         }
         
         // Load sidebar data
-        await loadSessions();
+        if (typeof loadSessions === 'function') {
+            await loadSessions();
+        }
         
         // Show main app
         switchPage('main-app');
@@ -105,7 +151,7 @@ document.addEventListener('click', (e) => {
     // Close user menu
     const userMenu = document.getElementById('user-menu');
     const userInfo = document.getElementById('user-info');
-    if (userMenu && userMenu.style.display === 'block' && !userInfo.contains(e.target)) {
+    if (userMenu && userMenu.style.display === 'block' && userInfo && !userInfo.contains(e.target)) {
         userMenu.style.display = 'none';
     }
     
@@ -113,22 +159,22 @@ document.addEventListener('click', (e) => {
     const sidebar = document.getElementById('sidebar');
     const toggleBtn = document.getElementById('sidebar-toggle-open');
     if (window.innerWidth <= 768 && sidebar && sidebar.classList.contains('open')) {
-        if (!sidebar.contains(e.target) && !toggleBtn.contains(e.target)) {
+        if (!sidebar.contains(e.target) && toggleBtn && !toggleBtn.contains(e.target)) {
             sidebar.classList.remove('open');
+            const backdrop = document.getElementById('sidebar-backdrop');
+            if (backdrop) backdrop.classList.remove('active');
         }
     }
 });
 
 // Boot up
 document.addEventListener('DOMContentLoaded', () => {
-    // Apply saved theme
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme) {
-        document.documentElement.setAttribute('data-theme', savedTheme);
-        const label = document.getElementById('theme-label');
-        if (label) {
-            label.textContent = savedTheme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
-        }
+    // Apply saved theme or default to dark for futuristic experience
+    const savedTheme = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    const label = document.getElementById('theme-label');
+    if (label) {
+        label.textContent = savedTheme === 'dark' ? 'Chế độ sáng' : 'Chế độ tối';
     }
     
     initApp();

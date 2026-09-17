@@ -1,18 +1,18 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <meta name="description"
-        content="Personal AI Agent — Trợ lý AI cá nhân thông minh, hỗ trợ phân tích tài liệu và trả lời câu hỏi.">
-    <title>Personal AI Agent</title>
+        content="Personal AI Agent — Trợ lý AI thế hệ mới, giao diện tương lai hỗ trợ phân tích tài liệu và trò chuyện thông minh.">
+    <title>Personal AI Agent — Neural Interface</title>
 
-    <!-- Google Fonts -->
+    <!-- Google Fonts: Space Grotesk, Outfit, Inter, JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Outfit:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap"
         rel="stylesheet">
 
     <!-- Styles -->
@@ -22,71 +22,122 @@
 <body>
 
     <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- AMBIENT FUTURISTIC BACKGROUND                               -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <div class="cyber-bg-effects" aria-hidden="true">
+        <div class="cyber-grid"></div>
+        <div class="cyber-scanlines"></div>
+        <div class="cyber-orb orb-primary"></div>
+        <div class="cyber-orb orb-secondary"></div>
+        <div class="cyber-orb orb-tertiary"></div>
+    </div>
+
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
     <!-- AUTH PAGE — Login / Register                               -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div id="auth-page" class="page active">
         <div class="auth-container">
             <div class="auth-brand">
-                <div class="brand-icon">
-                    <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                        <rect width="48" height="48" rx="12" fill="#000" />
-                        <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24" stroke="#fff"
-                            stroke-width="2.5" stroke-linecap="round" />
-                        <path d="M18 24C18 20.686 20.686 18 24 18C27.314 18 30 20.686 30 24" stroke="#fff"
-                            stroke-width="2" stroke-linecap="round" />
-                        <circle cx="24" cy="24" r="2" fill="#fff" />
-                        <path d="M24 26V34" stroke="#fff" stroke-width="2" stroke-linecap="round" />
-                        <path d="M20 32H28" stroke="#fff" stroke-width="2" stroke-linecap="round" />
-                    </svg>
+                <div class="brand-icon-wrapper">
+                    <div class="cyber-rings">
+                        <span class="ring ring-outer"></span>
+                        <span class="ring ring-inner"></span>
+                    </div>
+                    <div class="brand-icon">
+                        <svg width="40" height="40" viewBox="0 0 48 48" fill="none">
+                            <circle cx="24" cy="24" r="20" stroke="url(#cyan-grad)" stroke-width="2" stroke-dasharray="6 3" />
+                            <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24" stroke="var(--cyber-cyan)" stroke-width="2.5" stroke-linecap="round" />
+                            <circle cx="24" cy="24" r="4" fill="var(--cyber-cyan)" />
+                            <circle cx="24" cy="24" r="8" stroke="var(--cyber-purple)" stroke-width="1.5" />
+                            <path d="M24 28V36" stroke="var(--cyber-cyan)" stroke-width="2.5" stroke-linecap="round" />
+                            <path d="M18 36H30" stroke="var(--cyber-cyan)" stroke-width="2.5" stroke-linecap="round" />
+                            <defs>
+                                <linearGradient id="cyan-grad" x1="0" y1="0" x2="48" y2="48">
+                                    <stop stop-color="#00f0ff" />
+                                    <stop offset="1" stop-color="#8b5cf6" />
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
                 </div>
+                <div class="brand-badge"><span class="badge-dot"></span> NEURAL AGENT OS v2.5</div>
                 <h1 class="brand-title">Personal AI Agent</h1>
-                <p class="brand-subtitle">Trợ lý AI cá nhân thông minh</p>
+                <p class="brand-subtitle">Trợ lý AI Lượng tử & Phân tích Tri thức Cá nhân</p>
             </div>
 
-            <div class="auth-card">
+            <div class="auth-card cyber-card">
+                <div class="card-corner corner-tl"></div>
+                <div class="card-corner corner-tr"></div>
+                <div class="card-corner corner-bl"></div>
+                <div class="card-corner corner-br"></div>
+
                 <div class="auth-tabs">
-                    <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">Đăng nhập</button>
-                    <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">Đăng ký</button>
+                    <button id="tab-login" class="auth-tab active" onclick="switchAuthTab('login')">
+                        <span class="tab-glow"></span>
+                        Đăng nhập
+                    </button>
+                    <button id="tab-register" class="auth-tab" onclick="switchAuthTab('register')">
+                        <span class="tab-glow"></span>
+                        Đăng ký
+                    </button>
                 </div>
 
                 <!-- Login Form -->
                 <form id="login-form" class="auth-form active" onsubmit="handleLogin(event)">
                     <div class="form-group">
-                        <label for="login-email">Email</label>
-                        <input type="email" id="login-email" placeholder="email@example.com" required
-                            autocomplete="email">
+                        <label for="login-email">Tài khoản Email</label>
+                        <div class="input-glow-wrapper">
+                            <input type="email" id="login-email" placeholder="agent@quantum.ai" required
+                                autocomplete="email">
+                            <span class="input-focus-border"></span>
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label for="login-password">Mật khẩu</label>
-                        <input type="password" id="login-password" placeholder="••••••••" required
-                            autocomplete="current-password" minlength="6">
+                        <label for="login-password">Mật khẩu bảo mật</label>
+                        <div class="input-glow-wrapper">
+                            <input type="password" id="login-password" placeholder="••••••••" required
+                                autocomplete="current-password" minlength="6">
+                            <span class="input-focus-border"></span>
+                        </div>
                     </div>
-                    <button type="submit" id="login-btn" class="btn btn-primary btn-full">
-                        <span class="btn-text">Đăng nhập</span>
+                    <button type="submit" id="login-btn" class="btn btn-primary btn-full btn-cyber">
+                        <span class="btn-text">Đăng nhập hệ thống</span>
                         <span class="btn-loader" style="display:none;"></span>
+                        <span class="btn-shimmer"></span>
                     </button>
                 </form>
 
                 <!-- Register Form -->
                 <form id="register-form" class="auth-form" onsubmit="handleRegister(event)">
                     <div class="form-group">
-                        <label for="register-name">Tên hiển thị</label>
-                        <input type="text" id="register-name" placeholder="Nguyễn Văn A" required minlength="2"
-                            maxlength="50">
+                        <label for="register-name">Tên định danh</label>
+                        <div class="input-glow-wrapper">
+                            <input type="text" id="register-name" placeholder="Nguyễn Văn A" required minlength="2"
+                                maxlength="50">
+                            <span class="input-focus-border"></span>
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label for="register-email">Email</label>
-                        <input type="email" id="register-email" placeholder="email@example.com" required
-                            autocomplete="email">
+                        <label for="register-email">Địa chỉ Email</label>
+                        <div class="input-glow-wrapper">
+                            <input type="email" id="register-email" placeholder="agent@quantum.ai" required
+                                autocomplete="email">
+                            <span class="input-focus-border"></span>
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label for="register-password">Mật khẩu</label>
-                        <input type="password" id="register-password" placeholder="Tối thiểu 6 ký tự" required
-                            minlength="6" maxlength="128">
+                        <label for="register-password">Mật khẩu khởi tạo</label>
+                        <div class="input-glow-wrapper">
+                            <input type="password" id="register-password" placeholder="Tối thiểu 6 ký tự" required
+                                minlength="6" maxlength="128">
+                            <span class="input-focus-border"></span>
+                        </div>
                     </div>
-                    <button type="submit" id="register-btn" class="btn btn-primary btn-full">
-                        <span class="btn-text">Tạo tài khoản</span>
+                    <button type="submit" id="register-btn" class="btn btn-primary btn-full btn-cyber">
+                        <span class="btn-text">Khởi tạo tài khoản</span>
                         <span class="btn-loader" style="display:none;"></span>
+                        <span class="btn-shimmer"></span>
                     </button>
                 </form>
             </div>
@@ -97,36 +148,47 @@
     <!-- MAIN APP — Chat / Documents / Guide                        -->
     <!-- ═══════════════════════════════════════════════════════════ -->
     <div id="main-app" class="page">
+        <!-- Mobile Backdrops (active on mobile only) -->
+        <div id="sidebar-backdrop" class="backdrop-overlay" onclick="toggleSidebar()"></div>
+        <div id="panel-backdrop" class="backdrop-overlay" onclick="closeAllPanels()"></div>
 
         <!-- Sidebar -->
         <aside id="sidebar" class="sidebar">
             <div class="sidebar-header">
                 <div class="sidebar-brand">
-                    <svg width="28" height="28" viewBox="0 0 48 48" fill="none">
-                        <rect width="48" height="48" rx="12" fill="currentColor" />
-                        <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24" stroke="#fff"
-                            stroke-width="2.5" stroke-linecap="round" />
-                        <circle cx="24" cy="24" r="2" fill="#fff" />
-                        <path d="M24 26V34" stroke="#fff" stroke-width="2" stroke-linecap="round" />
-                    </svg>
-                    <span>AI Agent</span>
+                    <div class="brand-avatar-mini">
+                        <span class="mini-pulse"></span>
+                        <svg width="24" height="24" viewBox="0 0 48 48" fill="none">
+                            <circle cx="24" cy="24" r="22" stroke="var(--cyber-cyan)" stroke-width="2.5" stroke-dasharray="4 2"/>
+                            <circle cx="24" cy="24" r="10" fill="var(--cyber-cyan)"/>
+                            <path d="M24 6V14M24 34V42M6 24H14M34 24H42" stroke="var(--cyber-cyan)" stroke-width="2.5" stroke-linecap="round"/>
+                        </svg>
+                    </div>
+                    <div class="brand-titles">
+                        <span class="brand-main">NEURAL AGENT</span>
+                        <span class="brand-sub">QUANTUM CORE</span>
+                    </div>
                 </div>
                 <button id="sidebar-toggle-close" class="btn-icon" onclick="toggleSidebar()" title="Đóng sidebar">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M15 18l-6-6 6-6" />
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
                 </button>
             </div>
 
-            <button id="new-chat-btn" class="btn btn-new-chat" onclick="createNewSession()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <button id="new-chat-btn" class="btn btn-new-chat btn-cyber-subtle" onclick="createNewSession()">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                     <path d="M12 5v14M5 12h14" />
                 </svg>
                 <span>Cuộc trò chuyện mới</span>
+                <span class="btn-shortcut">Ctrl+N</span>
             </button>
 
             <div class="sidebar-sessions">
-                <div class="sidebar-section-title">Lịch sử trò chuyện</div>
+                <div class="sidebar-section-title">
+                    <span>Lịch sử trò chuyện</span>
+                    <span class="pulse-indicator"></span>
+                </div>
                 <div id="sessions-list" class="sessions-list">
                     <!-- Sessions sẽ được render bởi JS -->
                     <div class="empty-state small">
@@ -142,10 +204,11 @@
                         <span id="user-name" class="user-name">User</span>
                         <span id="user-email" class="user-email">user@email.com</span>
                     </div>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path
-                            d="M12 13a1 1 0 100-2 1 1 0 000 2zM12 6a1 1 0 100-2 1 1 0 000 2zM12 20a1 1 0 100-2 1 1 0 000 2z" />
-                    </svg>
+                    <div class="user-menu-arrow">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M6 9l6 6 6-6"/>
+                        </svg>
+                    </div>
                 </div>
                 <div id="user-menu" class="user-menu" style="display:none;">
                     <button onclick="toggleTheme()" class="user-menu-item">
@@ -153,7 +216,7 @@
                             stroke-width="2">
                             <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
                         </svg>
-                        <span id="theme-label">Chế độ tối</span>
+                        <span id="theme-label">Chế độ sáng</span>
                     </button>
                     <button onclick="handleLogout()" class="user-menu-item danger">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -171,16 +234,22 @@
             <!-- Header -->
             <header class="main-header">
                 <div class="header-left">
-                    <button id="sidebar-toggle-open" class="btn-icon" onclick="toggleSidebar()" title="Mở sidebar">
+                    <button id="sidebar-toggle-open" class="btn-icon header-toggle" onclick="toggleSidebar()" title="Mở sidebar">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <path d="M3 12h18M3 6h18M3 18h18" />
                         </svg>
                     </button>
-                    <h2 id="chat-title" class="chat-title">Cuộc trò chuyện mới</h2>
+                    <div class="header-info">
+                        <h2 id="chat-title" class="chat-title">Cuộc trò chuyện mới</h2>
+                        <div class="ai-status-badge">
+                            <span class="status-dot"></span>
+                            <span class="status-text">NEURAL CORE ONLINE</span>
+                        </div>
+                    </div>
                 </div>
                 <div class="header-actions">
-                    <button id="docs-btn" class="btn btn-ghost" onclick="openPanel('documents')">
+                    <button id="docs-btn" class="btn btn-ghost btn-header-action" onclick="openPanel('documents')">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -188,7 +257,7 @@
                         </svg>
                         <span>Tài liệu</span>
                     </button>
-                    <button id="guide-btn" class="btn btn-ghost" onclick="openPanel('guide')">
+                    <button id="guide-btn" class="btn btn-ghost btn-header-action" onclick="openPanel('guide')">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2">
                             <circle cx="12" cy="12" r="10" />
@@ -203,27 +272,53 @@
             <div id="chat-area" class="chat-area">
                 <!-- Welcome State -->
                 <div id="welcome-state" class="welcome-state">
-                    <div class="welcome-icon">
-                        <svg width="64" height="64" viewBox="0 0 48 48" fill="none">
-                            <rect width="48" height="48" rx="16" fill="var(--color-bg-tertiary)" />
-                            <path d="M14 24C14 18.477 18.477 14 24 14C29.523 14 34 18.477 34 24"
-                                stroke="var(--color-text-primary)" stroke-width="2" stroke-linecap="round" />
-                            <path d="M18 24C18 20.686 20.686 18 24 18C27.314 18 30 20.686 30 24"
-                                stroke="var(--color-text-secondary)" stroke-width="1.5" stroke-linecap="round" />
-                            <circle cx="24" cy="24" r="2.5" fill="var(--color-text-primary)" />
-                            <path d="M24 27V34" stroke="var(--color-text-primary)" stroke-width="2"
-                                stroke-linecap="round" />
-                        </svg>
+                    <div class="welcome-visual">
+                        <div class="hologram-projector">
+                            <div class="projector-glow"></div>
+                            <div class="projector-rings">
+                                <span class="p-ring r1"></span>
+                                <span class="p-ring r2"></span>
+                                <span class="p-ring r3"></span>
+                            </div>
+                            <div class="welcome-icon">
+                                <svg width="56" height="56" viewBox="0 0 48 48" fill="none">
+                                    <circle cx="24" cy="24" r="22" stroke="var(--cyber-cyan)" stroke-width="1.5" stroke-dasharray="5 3"/>
+                                    <path d="M16 24C16 19.58 19.58 16 24 16C28.42 16 32 19.58 32 24" stroke="var(--cyber-cyan)" stroke-width="2.5" stroke-linecap="round" />
+                                    <path d="M19 24C19 21.24 21.24 19 24 19C26.76 19 29 21.24 29 24" stroke="var(--cyber-purple)" stroke-width="1.8" stroke-linecap="round" />
+                                    <circle cx="24" cy="24" r="3.5" fill="var(--cyber-cyan)" />
+                                    <path d="M24 27.5V35" stroke="var(--cyber-cyan)" stroke-width="2.2" stroke-linecap="round" />
+                                    <circle cx="24" cy="36" r="1.5" fill="var(--cyber-cyan)" />
+                                </svg>
+                            </div>
+                        </div>
                     </div>
-                    <h2>Xin chào! Tôi là AI Agent của bạn</h2>
-                    <p>Tôi có thể giúp bạn phân tích tài liệu, trả lời câu hỏi, và tìm kiếm thông tin. Hãy bắt đầu bằng
-                        cách upload tài liệu hoặc đặt câu hỏi.</p>
+                    
+                    <div class="welcome-badge">
+                        <span class="sparkle">✨</span>
+                        <span>NEXT-GEN AI ASSISTANT</span>
+                    </div>
+
+                    <h2 class="welcome-heading">Xin chào! Tôi là <span class="text-gradient">Personal AI Agent</span></h2>
+                    <p class="welcome-desc">Hệ thống phân tích tài liệu và truy xuất tri thức lượng tử. Tôi có thể xử lý các định dạng dữ liệu phức tạp, kết nối kiến thức và đưa ra câu trả lời chính xác nhất.</p>
+                    
                     <div class="welcome-suggestions">
                         <button class="suggestion-chip"
-                            onclick="sendSuggestion('Hãy giới thiệu về các tính năng của bạn')">✨ Khám phá tính
-                            năng</button>
-                        <button class="suggestion-chip" onclick="openPanel('documents')">📄 Upload tài liệu</button>
-                        <button class="suggestion-chip" onclick="openPanel('guide')">📖 Xem hướng dẫn</button>
+                            onclick="sendSuggestion('Hãy giới thiệu về các tính năng của bạn')">
+                            <span class="chip-icon">⚡</span>
+                            <span>Khám phá tính năng</span>
+                        </button>
+                        <button class="suggestion-chip" onclick="openPanel('documents')">
+                            <span class="chip-icon">📄</span>
+                            <span>Upload tài liệu tri thức</span>
+                        </button>
+                        <button class="suggestion-chip" onclick="sendSuggestion('Hướng dẫn tôi cách nạp tài liệu và đặt câu hỏi hiệu quả')">
+                            <span class="chip-icon">💡</span>
+                            <span>Mẹo đặt câu hỏi tối ưu</span>
+                        </button>
+                        <button class="suggestion-chip" onclick="openPanel('guide')">
+                            <span class="chip-icon">📖</span>
+                            <span>Xem hướng dẫn hệ thống</span>
+                        </button>
                     </div>
                 </div>
 
@@ -235,15 +330,14 @@
                 <!-- Typing Indicator -->
                 <div id="typing-indicator" class="typing-indicator" style="display:none;">
                     <div class="typing-avatar">
-                        <svg width="20" height="20" viewBox="0 0 48 48" fill="none">
-                            <rect width="48" height="48" rx="12" fill="currentColor" />
-                            <circle cx="24" cy="24" r="3" fill="#fff" />
-                        </svg>
+                        <div class="typing-core"></div>
                     </div>
-                    <div class="typing-dots">
-                        <span></span><span></span><span></span>
+                    <div class="typing-content-box">
+                        <div class="typing-waves">
+                            <span></span><span></span><span></span><span></span>
+                        </div>
+                        <span class="typing-text">Neural Core đang suy nghĩ & phân tích...</span>
                     </div>
-                    <span class="typing-text">Agent đang suy nghĩ...</span>
                 </div>
             </div>
 
@@ -251,17 +345,20 @@
             <div class="chat-input-container">
                 <form id="chat-form" class="chat-form" onsubmit="handleSendMessage(event)">
                     <div class="input-wrapper">
-                        <textarea id="chat-input" class="chat-input" placeholder="Nhập câu hỏi của bạn..." rows="1"
+                        <div class="input-hud-accent left"></div>
+                        <textarea id="chat-input" class="chat-input" placeholder="Nhập câu hỏi hoặc yêu cầu cho AI Agent..." rows="1"
                             maxlength="2000"></textarea>
                         <button type="submit" id="send-btn" class="btn-send" disabled title="Gửi tin nhắn (Enter)">
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                             </svg>
                         </button>
+                        <div class="input-hud-accent right"></div>
                     </div>
                     <div class="input-hint">
-                        <span>Enter để gửi • Shift+Enter xuống dòng</span>
+                        <span><kbd>Enter</kbd> gửi tin • <kbd>Shift + Enter</kbd> xuống dòng</span>
                     </div>
                 </form>
             </div>
@@ -272,8 +369,11 @@
         <!-- ═══════════════════════════════════════════════════════ -->
         <div id="documents-panel" class="slide-panel">
             <div class="panel-header">
-                <h3>Tài liệu của tôi</h3>
-                <button class="btn-icon" onclick="closePanel('documents')">
+                <div class="panel-title-wrap">
+                    <span class="panel-tag">KNOWLEDGE BASE</span>
+                    <h3>Tài liệu tri thức</h3>
+                </div>
+                <button class="btn-icon" onclick="closePanel('documents')" title="Đóng panel">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
@@ -284,34 +384,48 @@
                 <!-- Upload Zone -->
                 <div id="upload-zone" class="upload-zone" ondragover="handleDragOver(event)"
                     ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+                    <div class="laser-scanner" aria-hidden="true"></div>
                     <input type="file" id="file-input" accept=".pdf,.docx,.csv,.md" style="display:none;"
                         onchange="handleFileSelect(event)">
-                    <div class="upload-icon">
-                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="1.5">
-                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
-                        </svg>
+                    <div class="upload-icon-wrapper">
+                        <div class="upload-pulse"></div>
+                        <div class="upload-icon">
+                            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="1.8">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
+                            </svg>
+                        </div>
                     </div>
-                    <p class="upload-text">Kéo thả file vào đây</p>
+                    <p class="upload-text">Kéo thả file vào khu vực này</p>
                     <p class="upload-subtext">hoặc <button type="button" class="upload-browse"
                             onclick="document.getElementById('file-input').click()">chọn từ máy tính</button></p>
-                    <p class="upload-formats">Hỗ trợ: PDF, DOCX, CSV, MD</p>
+                    <div class="upload-formats-badges">
+                        <span class="fmt-pill">PDF</span>
+                        <span class="fmt-pill">DOCX</span>
+                        <span class="fmt-pill">CSV</span>
+                        <span class="fmt-pill">MD</span>
+                    </div>
                 </div>
 
                 <!-- Upload Progress -->
                 <div id="upload-progress" class="upload-progress" style="display:none;">
                     <div class="progress-info">
                         <span id="upload-filename" class="progress-filename">file.pdf</span>
-                        <span id="upload-status" class="progress-status">Đang xử lý...</span>
+                        <span id="upload-status" class="progress-status">Đang nạp năng lượng & xử lý...</span>
                     </div>
                     <div class="progress-bar">
-                        <div id="progress-fill" class="progress-fill"></div>
+                        <div id="progress-fill" class="progress-fill">
+                            <span class="progress-glow"></span>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Documents List -->
                 <div class="documents-section">
-                    <h4 class="section-title">Tài liệu đã upload</h4>
+                    <div class="section-title-wrap">
+                        <h4 class="section-title">Kho dữ liệu đã nạp</h4>
+                        <span class="section-badge">RAG READY</span>
+                    </div>
                     <div id="documents-list" class="documents-list">
                         <div class="empty-state">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
@@ -320,8 +434,7 @@
                                 <polyline points="14 2 14 8 20 8" />
                             </svg>
                             <p>Chưa có tài liệu nào</p>
-                            <p class="empty-state-hint">Upload tài liệu để AI Agent có thể phân tích và trả lời câu hỏi
-                            </p>
+                            <p class="empty-state-hint">Tải tài liệu lên để AI Agent có thể truy xuất thông tin ngữ cảnh</p>
                         </div>
                     </div>
                 </div>
@@ -333,8 +446,11 @@
         <!-- ═══════════════════════════════════════════════════════ -->
         <div id="guide-panel" class="slide-panel">
             <div class="panel-header">
-                <h3>Hướng dẫn sử dụng</h3>
-                <button class="btn-icon" onclick="closePanel('guide')">
+                <div class="panel-title-wrap">
+                    <span class="panel-tag">MANUAL</span>
+                    <h3>Hướng dẫn sử dụng</h3>
+                </div>
+                <button class="btn-icon" onclick="closePanel('guide')" title="Đóng panel">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
@@ -344,67 +460,55 @@
             <div class="panel-body guide-content">
                 <div class="guide-section">
                     <div class="guide-step">
-                        <div class="step-number">1</div>
+                        <div class="step-number">01</div>
                         <div class="step-content">
-                            <h4>Đăng ký & Đăng nhập</h4>
-                            <p>Tạo tài khoản với email và mật khẩu. Sau khi đăng nhập, bạn sẽ được truy cập toàn bộ tính
-                                năng của hệ thống AI Agent.</p>
+                            <h4>Đăng ký & Xác thực</h4>
+                            <p>Tạo tài khoản cá nhân. Toàn bộ phiên chat và kho tài liệu của bạn được phân vùng bảo mật riêng biệt.</p>
                         </div>
                     </div>
 
                     <div class="guide-step">
-                        <div class="step-number">2</div>
+                        <div class="step-number">02</div>
                         <div class="step-content">
-                            <h4>Upload tài liệu</h4>
-                            <p>Tải lên các file tài liệu của bạn (PDF, DOCX, CSV, MD). AI Agent sẽ tự động phân tích,
-                                chia nhỏ nội dung và lưu vào cơ sở kiến thức cá nhân.</p>
+                            <h4>Upload tài liệu tri thức</h4>
+                            <p>Tải lên các file tài liệu (PDF, DOCX, CSV, MD). Hệ thống tự động thực hiện chunking và embedding vào Chroma Vector Database.</p>
                             <div class="guide-tip">
-                                <strong>💡 Mẹo:</strong> Bạn có thể kéo thả file trực tiếp vào vùng upload để tiết kiệm
-                                thời gian.
+                                <strong>⚡ Mẹo:</strong> Kéo thả trực tiếp nhiều tệp vào khu vực quét laser để nạp nhanh.
                             </div>
                         </div>
                     </div>
 
                     <div class="guide-step">
-                        <div class="step-number">3</div>
+                        <div class="step-number">03</div>
                         <div class="step-content">
-                            <h4>Trò chuyện với AI</h4>
-                            <p>Đặt câu hỏi về nội dung tài liệu đã upload hoặc bất kỳ chủ đề nào. AI Agent sẽ tìm kiếm
-                                trong tài liệu của bạn và trả lời chính xác.</p>
-                            <div class="guide-tip">
-                                <strong>💡 Mẹo:</strong> Câu hỏi càng cụ thể, câu trả lời càng chính xác.
-                            </div>
+                            <h4>Hỏi đáp & Phân tích thông minh</h4>
+                            <p>Hỏi bất kỳ điều gì liên quan đến tài liệu. Agent sẽ tự động kích hoạt công cụ tìm kiếm ngữ nghĩa (RAG Search) để trả lời dẫn chứng chính xác.</p>
                         </div>
                     </div>
 
                     <div class="guide-step">
-                        <div class="step-number">4</div>
+                        <div class="step-number">04</div>
                         <div class="step-content">
-                            <h4>Quản lý cuộc trò chuyện</h4>
-                            <p>Mỗi cuộc trò chuyện được lưu thành một session riêng. Bạn có thể:</p>
-                            <ul>
-                                <li>Tạo cuộc trò chuyện mới bằng nút <strong>"+ Cuộc trò chuyện mới"</strong></li>
-                                <li>Chuyển đổi giữa các cuộc trò chuyện cũ trong sidebar</li>
-                                <li>Xóa cuộc trò chuyện không cần thiết</li>
-                            </ul>
+                            <h4>Quản lý phiên trò chuyện</h4>
+                            <p>Mỗi cuộc đối thoại được lưu theo phiên riêng biệt, dễ dàng xem lại hoặc xóa bất cứ lúc nào trong thanh điều hướng bên trái.</p>
                         </div>
                     </div>
 
                     <div class="guide-step">
-                        <div class="step-number">5</div>
+                        <div class="step-number">05</div>
                         <div class="step-content">
-                            <h4>Phím tắt</h4>
+                            <h4>Phím tắt thao tác nhanh</h4>
                             <div class="shortcuts-grid">
                                 <div class="shortcut"><kbd>Enter</kbd> <span>Gửi tin nhắn</span></div>
-                                <div class="shortcut"><kbd>Shift+Enter</kbd> <span>Xuống dòng</span></div>
-                                <div class="shortcut"><kbd>Ctrl+N</kbd> <span>Cuộc trò chuyện mới</span></div>
+                                <div class="shortcut"><kbd>Shift + Enter</kbd> <span>Xuống dòng văn bản</span></div>
+                                <div class="shortcut"><kbd>Ctrl + N</kbd> <span>Mở hội thoại mới</span></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <div class="guide-section">
-                    <h4>Các loại file được hỗ trợ</h4>
+                    <h4 class="section-title">Định dạng hỗ trợ</h4>
                     <div class="file-types-grid">
                         <div class="file-type-card">
                             <div class="file-icon pdf">PDF</div>
@@ -420,7 +524,7 @@
                         </div>
                         <div class="file-type-card">
                             <div class="file-icon md">MD</div>
-                            <span>Markdown</span>
+                            <span>Markdown Text</span>
                         </div>
                     </div>
                 </div>
@@ -434,12 +538,23 @@
 
     <!-- Confirm Dialog -->
     <div id="confirm-dialog" class="confirm-overlay" style="display:none;">
-        <div class="confirm-dialog">
-            <h4 id="confirm-title">Xác nhận</h4>
-            <p id="confirm-message">Bạn có chắc chắn?</p>
+        <div class="confirm-dialog cyber-card">
+            <div class="card-corner corner-tl"></div>
+            <div class="card-corner corner-tr"></div>
+            <div class="card-corner corner-bl"></div>
+            <div class="card-corner corner-br"></div>
+            <div class="confirm-icon-wrap">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <line x1="12" y1="8" x2="12" y2="12"/>
+                    <line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+            </div>
+            <h4 id="confirm-title">Xác nhận thao tác</h4>
+            <p id="confirm-message">Bạn có chắc chắn muốn thực hiện hành động này?</p>
             <div class="confirm-actions">
-                <button id="confirm-cancel" class="btn btn-ghost" onclick="closeConfirmDialog()">Hủy</button>
-                <button id="confirm-ok" class="btn btn-danger">Xác nhận</button>
+                <button id="confirm-cancel" class="btn btn-ghost" onclick="closeConfirmDialog()">Hủy bỏ</button>
+                <button id="confirm-ok" class="btn btn-danger btn-cyber-danger">Xác nhận xóa</button>
             </div>
         </div>
     </div>
