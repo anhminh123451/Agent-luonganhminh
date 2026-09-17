@@ -87,7 +87,7 @@ class ChatRequest(BaseModel):
         min_length=1,
         max_length=2000,
         description="Câu hỏi từ user. Không được rỗng, tối đa 2000 ký tự.",
-        examples=["Lãi suất tiết kiệm 12 tháng là bao nhiêu?"],
+        examples=["Your question ? "],
     )
 
     session_id: str | None = Field(
@@ -118,7 +118,7 @@ class ChatRequest(BaseModel):
             "Giới hạn số bước tối đa cho ReAct loop. "
             "Nếu None, dùng giá trị mặc định từ server config."
         ),
-        examples=[5, 10],
+        examples=[10],
     )
 
     @model_validator(mode="before")
@@ -473,14 +473,11 @@ class TokenResponse(BaseModel):
     access_token: str = Field(
         ..., description="JWT access token (dùng cho Authorization header)."
     )
-    refresh_token: str | None = Field(
-        default=None, description="JWT refresh token (đã chuyển sang dùng HttpOnly cookie, field này có thể bị loại bỏ)."
-    )
+    
     token_type: str = Field(
         default="bearer", description="Loại token (luôn là 'bearer')."
     )
 
-# Removed RefreshRequest and LogoutRequest as refresh_token will be read from cookies.
 
 class UserResponse(BaseModel):
     """Response chứa thông tin user (không bao gồm password)."""
