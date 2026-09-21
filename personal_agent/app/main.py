@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from api.routes import auth, chat, document, health, sessions
+from api.routes import auth, chat, document, health, sessions, evaluate
 from databases.database import engine, Base
 from tools import setup_tools
 from agent.profiles import setup_profiles
@@ -60,6 +60,10 @@ app.include_router(
     prefix="/api"
 )
 
+app.include_router(
+    evaluate.router,
+    prefix="/api"
+)
 # ── Static Files — serve frontend SPA ─────────────────────────────────
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
 if os.path.isdir(frontend_dir):

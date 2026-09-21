@@ -172,14 +172,13 @@ def _check_llm_provider(settings) -> DependencyStatus:
     """
     try:
         provider = settings.LLM_PROVIDER
-        model = settings.MODEL_LLM
+        model = settings.DEEPSEEK_MODEL
 
         # Kiểm tra API key dựa trên provider
         api_key_available = False
-        if provider.lower() == "gemini":
-            api_key_available = bool(settings.GEMINI_API_KEY)
-        elif provider.lower() == "groq":
-            api_key_available = bool(settings.GROQ_API_KEY)
+        if provider.lower() == "deepseek":
+            api_key_available = bool(settings.DEEPSEEK_API_KEY)
+        
         else:
             # Provider không xác định → vẫn report, không crash
             return DependencyStatus(

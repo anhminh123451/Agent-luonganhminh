@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     CHROMA_HOST: str = ""
     CHROMA_PORT: int = 443
     CHROMA_AUTH_TOKEN: str = ""
+    
+    LLM_PROVIDER:str = "deepseek"
     EMBEDDING_PROVIDER: str = "gemini"  # Provider embedding (gemini, openai, ...)
     EMBEDDING_MODEL: str = "gemini-embedding-2"  # Model embedding cụ thể
     CHECKPOINT_DB_PATH: str = "./data/checkpoints.sqlite"
