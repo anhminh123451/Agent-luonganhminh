@@ -271,6 +271,32 @@ def _check_checkpointer(settings) -> DependencyStatus:
         )
 
 
+def _check_tavily(settings) -> DependencyStatus:
+    """
+    Kiểm tra cấu hình Tavily Search API.
+    """
+    try:
+        api_key = getattr(settings, "TAVILY_API_KEY", "")
+        if not api_key:
+            return DependencyStatus(
+                name="tavily_search",
+                status="unhealthy",
+                details="TAVILY_API_KEY is missing or empty (check .env file)",
+            )
+        return DependencyStatus(
+            name="tavily_search",
+            status="healthy",
+            details="Tavily API key configured",
+        )
+    except Exception as e:
+        logger.warning(f"Health check: tavily_search unhealthy — {e}")
+        return DependencyStatus(
+            name="tavily_search",
+            status="unhealthy",
+            details=f"Tavily check failed: {e}",
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # HELPER — Tạo error response chuẩn hóa
 # ═══════════════════════════════════════════════════════════════════════
@@ -383,6 +409,7 @@ async def health_check(
             _check_vector_store(),
             _check_llm_provider(settings),
             _check_checkpointer(settings),
+            _check_tavily(settings),
         ]
 
         # ── Tính overall status ───────────────────────────────────

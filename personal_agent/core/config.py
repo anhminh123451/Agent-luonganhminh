@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # Gemini (chỉ dùng cho Embedding)
     GEMINI_API_KEY: str = ""
 
+    # Tavily Web Search
+    TAVILY_API_KEY: str = ""
+
     CHROMA_DB_PATH: str = "./data/chroma_db"
     COLLECTION_NAME: str = "user_data"
     # ChromaDB Remote (Fly.io) 
