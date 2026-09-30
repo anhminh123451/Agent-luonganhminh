@@ -2,6 +2,8 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+
+    MAX_RESULTS_WEBSEARCH : int = 3
     # DeepSeek LLM
     DEEPSEEK_API_KEY: str
     DEEPSEEK_MODEL: str = "deepseek-flash"  # DeepSeek V4 Flash
@@ -38,11 +40,29 @@ class Settings(BaseSettings):
     
     # Database
     DATABASE_URL: str
-    
+
+    # ─── Supabase Storage (Tầng Gốc - BM25 Index) ────────────────────
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_BM25_BUCKET: str = ""
+
+    # ─── Redis (Tầng 2 - Distributed Cache) ───────────────────────────
+    REDIS_URL: str = ""
+    REDIS_BM25_TTL: int = 86400          # 24 giờ
+    REDIS_LOCK_TIMEOUT: int = 10         # 10 giây chống Cache Stampede
+
+    # ─── Local RAM (Tầng 1 - In-Process Cache) ────────────────────────
+    L1_CACHE_MAXSIZE: int = 100          # Tối đa 100 users active
+    L1_CACHE_TTL: int = 1800             # 30 phút
+
+    # ─── Hybrid Search Params ─────────────────────────────────────────
+    HYBRID_DENSE_WEIGHT: float = 0.5
+    HYBRID_SPARSE_WEIGHT: float = 0.5
+    HYBRID_RRF_K: int = 60
+
     class Config:
         env_file = ".env"
 
 
 settings = Settings()
-
 

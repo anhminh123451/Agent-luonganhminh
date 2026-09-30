@@ -1,8 +1,10 @@
 """
 Document Search Tool cho Personal AI Agent — Tool Layer.
 
-Tool này tra cứu tài liệu cá nhân của user từ Vector Store (ChromaDB),
-phục vụ pipeline RAG: user query → embed → similarity search → trả context.
+Tool này tra cứu tài liệu cá nhân của user bằng Hybrid Search:
+    - Dense Search (ChromaDB semantic similarity)
+    - Sparse Search (BM25 keyword matching qua PyVi)
+    - Reciprocal Rank Fusion (RRF re-ranking)
 
 Đây là tool CORE của hệ thống multi-tenant personal agent.
 Mỗi user chỉ có thể truy vấn tài liệu của chính mình — đảm bảo
@@ -11,18 +13,17 @@ data isolation giữa các users thông qua user_id filtering.
 Kiến trúc:
     - DocumentSearchArgs(ToolArgsSchema): Pydantic model validate input từ LLM
     - DocumentSearchTool(BaseTool): Strategy cụ thể cho document retrieval
-    - Sử dụng Embedder để embed query thành vector
-    - Sử dụng VectorStore để similarity search với user_id filter
+    - Sử dụng HybridRetriever: Dense (ChromaDB) + Sparse (BM25) + RRF
 
 Luồng chạy:
     1. LLM gọi tool "document_search" với args {query, n_results}
     2. BaseTool.safe_run() gọi DocumentSearchTool.run()
-    3. run() validate args → embed query → query VectorStore (filter user_id)
+    3. run() validate args → HybridRetriever.search() (Dense + BM25 + RRF)
     4. Format kết quả thành text context → trả ToolResult
 
 Multi-tenant Security:
     - user_id được hệ thống ngầm tiêm vào từ AgentState (không phải LLM tự truyền)
-    - VectorStore.query() luôn filter theo user_id bắt buộc
+    - ChromaDB + BM25 đều filter theo user_id bắt buộc
     - Tool KHÔNG cho phép rò rỉ dữ liệu chéo giữa các users
 
 Cách đăng ký:
@@ -143,66 +144,64 @@ class DocumentSearchTool(BaseTool):
     name: ClassVar[str] = "document_search"
     description: ClassVar[str] = (
         "Tìm kiếm thông tin trong tài liệu cá nhân mà người dùng đã tải lên. "
+        "Sử dụng Hybrid Search kết hợp Dense (semantic) và Sparse (BM25 keyword) "
+        "với Reciprocal Rank Fusion để tăng độ chính xác, đặc biệt với "
+        "từ khóa chính xác, mã số, thuật ngữ tiếng Việt. "
         "Sử dụng tool này khi câu hỏi liên quan đến nội dung trong các file "
         "tài liệu (PDF, DOCX, CSV, MD) của người dùng. "
-        "Tool sẽ tự động tìm kiếm trong tài liệu của đúng người dùng hiện tại, "
-        "đảm bảo không truy cập tài liệu của người khác."
+        "Tool sẽ tự động tìm kiếm trong tài liệu của đúng người dùng hiện tại."
     )
     category: ClassVar[ToolCategory] = ToolCategory.RETRIEVAL
     args_schema: ClassVar[type[ToolArgsSchema]] = DocumentSearchArgs
-    version: ClassVar[str] = "1.0.0"
+    version: ClassVar[str] = "2.0.0"  # Hybrid Search version
 
     # ─── Dependencies (inject khi khởi tạo) ───────────────────────────
 
     def __init__(
         self,
+        hybrid_retriever=None,
         vector_store=None,
-        embedder=None,
     ):
         """
         Khởi tạo DocumentSearchTool.
 
         Args:
-            vector_store: VectorStore instance. Nếu None, tạo mới từ default config.
-            embedder: Embedder instance. Nếu None, tạo mới từ default config.
+            hybrid_retriever: HybridRetriever instance. Nếu None, tạo mới.
+            vector_store: VectorStore instance (dùng để count docs).
         """
+        self._hybrid_retriever = hybrid_retriever
         self._vector_store = vector_store
-        self._embedder = embedder
+
+    def _get_hybrid_retriever(self):
+        """Lazy init HybridRetriever — chỉ tạo khi cần."""
+        if self._hybrid_retriever is None:
+            from knowledge_base.hybrid_retriever import HybridRetriever
+            self._hybrid_retriever = HybridRetriever()
+            logger.debug("DocumentSearchTool: HybridRetriever initialized (lazy)")
+        return self._hybrid_retriever
 
     def _get_vector_store(self):
-        """Lazy init VectorStore — chỉ tạo khi cần."""
+        """Lazy init VectorStore — chỉ dùng để count docs."""
         if self._vector_store is None:
             from knowledge_base.vector_store import VectorStore
             self._vector_store = VectorStore()
             logger.debug("DocumentSearchTool: VectorStore initialized (lazy)")
         return self._vector_store
 
-    def _get_embedder(self):
-        """Lazy init Embedder — chỉ tạo khi cần."""
-        if self._embedder is None:
-            from knowledge_base.embed import Embedder
-            self._embedder = Embedder()
-            logger.debug("DocumentSearchTool: Embedder initialized (lazy)")
-        return self._embedder
-
     # ─── Core logic ───────────────────────────────────────────────────
 
     def run(self, **kwargs) -> ToolResult:
         """
-        Thực thi document search: embed query → query VectorStore → format context.
+        Thực thi Hybrid Search: Dense + BM25 + RRF Fusion.
 
         Args:
-            **kwargs: Arguments từ LLM + hệ thống, validate thành DocumentSearchArgs.
-                - query (str, required): Câu truy vấn tìm kiếm tài liệu.
+            **kwargs: Arguments từ LLM + hệ thống.
+                - query (str, required): Câu truy vấn tìm kiếm.
                 - n_results (int, default=5): Số kết quả tối đa.
-                - user_id (str, required): ID người dùng (hệ thống tiêm vào).
+                - user_id (int, required): ID người dùng (hệ thống tiêm vào).
 
         Returns:
             ToolResult với context chứa tài liệu liên quan.
-
-        Raises:
-            ToolValidationError: Input không hợp lệ (qua validate_args).
-            ToolExecutionError: Lỗi khi embed hoặc query VectorStore.
         """
         # ── Step 1: Validate input ────────────────────────────────────
         args = self.validate_args(**kwargs)
@@ -216,7 +215,7 @@ class DocumentSearchTool(BaseTool):
             )
 
         logger.info(
-            f"Document search: query='{args.query[:80]}', "
+            f"Hybrid search: query='{args.query[:80]}', "
             f"n_results={args.n_results}, user_id={args.user_id}"
         )
 
@@ -226,7 +225,7 @@ class DocumentSearchTool(BaseTool):
 
         if doc_count == 0:
             logger.info(
-                f"Document search: no documents for user_id={args.user_id}"
+                f"Hybrid search: no documents for user_id={args.user_id}"
             )
             return ToolResult(
                 context=(
@@ -244,32 +243,17 @@ class DocumentSearchTool(BaseTool):
                 },
             )
 
-        # ── Step 4: Embed query thành vector ──────────────────────────
+        # ── Step 4: Hybrid Search (Dense + BM25 + RRF) ────────────────
         try:
-            embedder = self._get_embedder()
-            query_embedding = embedder.embed(args.query)
-            logger.debug(
-                f"Query embedded: {len(query_embedding)}D vector"
-            )
-        except Exception as e:
-            raise ToolExecutionError(
-                f"Failed to embed query: {e}",
-                details={
-                    "query": args.query[:200],
-                    "error": str(e),
-                },
-            ) from e
-
-        # ── Step 5: Query VectorStore với user_id filter ──────────────
-        try:
-            query_result = vector_store.query(
+            hybrid_retriever = self._get_hybrid_retriever()
+            search_result = hybrid_retriever.search(
+                query=args.query,
                 user_id=args.user_id,
-                query_embedding=query_embedding,
                 n_results=args.n_results,
             )
         except Exception as e:
             raise ToolExecutionError(
-                f"VectorStore query failed: {e}",
+                f"Hybrid search failed: {e}",
                 details={
                     "query": args.query[:200],
                     "user_id": args.user_id,
@@ -278,10 +262,10 @@ class DocumentSearchTool(BaseTool):
                 },
             ) from e
 
-        # ── Step 6: Xử lý kết quả rỗng ──────────────────────────────
-        if query_result.is_empty:
+        # ── Step 5: Xử lý kết quả rỗng ──────────────────────────────
+        if search_result.is_empty:
             logger.info(
-                f"Document search: no relevant results for "
+                f"Hybrid search: no relevant results for "
                 f"query='{args.query[:50]}', user_id={args.user_id}"
             )
             return ToolResult(
@@ -300,12 +284,13 @@ class DocumentSearchTool(BaseTool):
                 },
             )
 
-        # ── Step 7: Format kết quả thành text context ─────────────────
+        # ── Step 6: Format kết quả thành text context ─────────────────
         context = self._format_results(
             query=args.query,
-            documents=query_result.documents,
-            metadatas=query_result.metadatas,
-            distances=query_result.distances,
+            documents=search_result.documents,
+            metadatas=search_result.metadatas,
+            scores=search_result.rrf_scores,
+            mode=search_result.mode,
         )
 
         # Truncate nếu quá dài (bảo vệ context window của LLM)
@@ -316,15 +301,15 @@ class DocumentSearchTool(BaseTool):
             )
 
         logger.info(
-            f"Document search: found {len(query_result.documents)} results "
+            f"Hybrid search: found {len(search_result.documents)} results "
             f"for query='{args.query[:50]}', user_id={args.user_id} "
-            f"(context_length={len(context)})"
+            f"(mode={search_result.mode}, context_length={len(context)})"
         )
 
         # Lấy danh sách source files duy nhất
         source_files = sorted(set(
             meta.get("source_file", "unknown")
-            for meta in query_result.metadatas
+            for meta in search_result.metadatas
             if meta
         ))
 
@@ -334,10 +319,13 @@ class DocumentSearchTool(BaseTool):
             metadata={
                 "query": args.query,
                 "user_id": args.user_id,
-                "n_results": len(query_result.documents),
+                "n_results": len(search_result.documents),
                 "total_user_docs": doc_count,
                 "source_files": source_files,
-                "distances": query_result.distances,
+                "search_mode": search_result.mode,
+                "dense_count": search_result.dense_count,
+                "sparse_count": search_result.sparse_count,
+                "rrf_scores": search_result.rrf_scores,
             },
         )
 
@@ -348,25 +336,24 @@ class DocumentSearchTool(BaseTool):
         query: str,
         documents: list[str],
         metadatas: list[dict],
-        distances: list[float],
+        scores: list[float],
+        mode: str = "hybrid",
     ) -> str:
         """
-        Format kết quả tìm kiếm thành text context cho agent.
+        Format kết quả Hybrid Search thành text context cho agent.
 
         Output format:
-            Kết quả tìm kiếm tài liệu cho: "điều khoản bảo mật"
+            Kết quả tìm kiếm tài liệu cho: "điều khoản bảo mật" (Hybrid Search)
 
-            === Tài liệu 1 (Nguồn: report.pdf, Độ liên quan: 0.85) ===
-            [Nội dung tài liệu ...]
-
-            === Tài liệu 2 (Nguồn: contract.docx, Độ liên quan: 0.72) ===
+            === Tài liệu 1 (Nguồn: report.pdf, RRF Score: 0.0163) ===
             [Nội dung tài liệu ...]
 
         Args:
             query: Câu truy vấn gốc.
-            documents: Danh sách nội dung document khớp.
-            metadatas: Danh sách metadata tương ứng.
-            distances: Danh sách khoảng cách (similarity score).
+            documents: Danh sách nội dung document.
+            metadatas: Danh sách metadata.
+            scores: RRF scores hoặc distances.
+            mode: Chế độ search (để hiển thị).
 
         Returns:
             Formatted text string.
@@ -374,24 +361,28 @@ class DocumentSearchTool(BaseTool):
         if not documents:
             return f"Không tìm thấy tài liệu liên quan đến: '{query}'"
 
+        mode_label = {
+            "hybrid": "Hybrid: Dense + BM25 + RRF",
+            "dense_only": "Dense Only (ChromaDB)",
+            "sparse_only": "Sparse Only (BM25)",
+        }.get(mode, mode)
+
         parts = [
             f'Kết quả tìm kiếm tài liệu cho: "{query}"',
-            f"(Tìm thấy {len(documents)} đoạn tài liệu liên quan)",
+            f"(Tìm thấy {len(documents)} đoạn tài liệu liên quan — {mode_label})",
         ]
 
-        for i, (doc, meta, dist) in enumerate(
-            zip(documents, metadatas, distances)
+        for i, (doc, meta, score) in enumerate(
+            zip(documents, metadatas, scores)
         ):
             source_file = meta.get("source_file", "unknown") if meta else "unknown"
             chunk_index = meta.get("chunk_index", "?") if meta else "?"
 
-            # Chuyển distance thành relevance score (ChromaDB dùng L2 distance)
-            # distance nhỏ hơn = liên quan hơn
-            relevance = f"distance={dist:.4f}" if dist is not None else ""
+            score_label = f"score={score:.6f}" if score is not None else ""
 
             header = (
                 f"=== Tài liệu {i + 1} "
-                f"(Nguồn: {source_file}, Chunk: {chunk_index}, {relevance}) ==="
+                f"(Nguồn: {source_file}, Chunk: {chunk_index}, {score_label}) ==="
             )
 
             parts.append(f"{header}\n{doc}")

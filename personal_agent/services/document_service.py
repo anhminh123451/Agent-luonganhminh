@@ -111,6 +111,8 @@ class DocumentService:
     def __init__(self) -> None:
         self._embedder = None
         self._vector_store = None
+        self._cache_manager = None
+        self._tokenizer = None
         logger.info("DocumentService initialized")
 
     # ─── Lazy initialization ─────────────────────────────────────────
@@ -130,6 +132,22 @@ class DocumentService:
             self._vector_store = VectorStore()
             logger.debug("VectorStore lazy-initialized for DocumentService")
         return self._vector_store
+
+    def _get_cache_manager(self):
+        """Lazy-init CacheManager (Two-Tier Cache cho BM25)."""
+        if self._cache_manager is None:
+            from knowledge_base.cache_manager import CacheManager
+            self._cache_manager = CacheManager()
+            logger.debug("CacheManager lazy-initialized for DocumentService")
+        return self._cache_manager
+
+    def _get_tokenizer(self):
+        """Lazy-init VietnameseTokenizer (PyVi word segmentation)."""
+        if self._tokenizer is None:
+            from knowledge_base.vietnamese_tokenizer import VietnameseTokenizer
+            self._tokenizer = VietnameseTokenizer()
+            logger.debug("VietnameseTokenizer lazy-initialized for DocumentService")
+        return self._tokenizer
 
     # ═════════════════════════════════════════════════════════════════
     # UPLOAD — Ingest file vào knowledge base
@@ -282,6 +300,49 @@ class DocumentService:
                 f"for user_id={user_id}"
             )
 
+            # ── Step 6.5: Cập nhật BM25 Index (Sparse Search) ────────
+            try:
+                tokenizer = self._get_tokenizer()
+                cache_manager = self._get_cache_manager()
+
+                # Tokenize tất cả chunks
+                tokenized_docs = tokenizer.tokenize_batch(contents)
+
+                # Lấy BM25Store hiện tại hoặc tạo mới
+                existing_store = cache_manager.get_user_bm25(user_id)
+
+                if existing_store is not None and not existing_store.is_empty:
+                    # Thêm docs mới vào store hiện tại
+                    existing_store.add_documents(
+                        doc_ids=ids,
+                        documents=contents,
+                        metadatas=metadatas,
+                        tokenized_docs=tokenized_docs,
+                    )
+                    cache_manager.save_user_bm25(user_id, existing_store)
+                else:
+                    # Tạo BM25Store mới
+                    from knowledge_base.bm25_store import BM25Store
+                    new_store = BM25Store.build(
+                        user_id=user_id,
+                        doc_ids=ids,
+                        documents=contents,
+                        metadatas=metadatas,
+                        tokenized_corpus=tokenized_docs,
+                    )
+                    cache_manager.save_user_bm25(user_id, new_store)
+
+                logger.info(
+                    f"BM25 index updated for user_id={user_id} | "
+                    f"{len(ids)} chunks indexed"
+                )
+            except Exception as e:
+                # BM25 không phải critical — log warning và tiếp tục
+                logger.warning(
+                    f"BM25 index update failed (non-critical) | "
+                    f"user_id={user_id}, error={e}"
+                )
+
             # ── Step 7: Lưu metadata vào SQL database ────────────
             from databases.models import Documents as DocumentModel
 
@@ -406,13 +467,14 @@ class DocumentService:
             return False
 
         # Xóa documents liên quan trong vector store (theo source_file)
+        chunk_ids = []
         try:
             vector_store = self._get_vector_store()
-            doc_ids = vector_store.get_ids_by_source_file(doc.title)
-            if doc_ids:
-                vector_store.delete_documents(doc_ids)
+            chunk_ids = vector_store.get_ids_by_source_file(doc.title)
+            if chunk_ids:
+                vector_store.delete_documents(chunk_ids)
                 logger.info(
-                    f"Deleted {len(doc_ids)} chunks from vector store "
+                    f"Deleted {len(chunk_ids)} chunks from vector store "
                     f"for document '{doc.title}'"
                 )
         except Exception as e:
@@ -420,6 +482,32 @@ class DocumentService:
                 f"Failed to delete vector store entries for "
                 f"document '{doc.title}': {e}"
             )
+
+        # Xóa chunks khỏi BM25 Index và cập nhật cache
+        if chunk_ids:
+            try:
+                cache_manager = self._get_cache_manager()
+                existing_store = cache_manager.get_user_bm25(user_id)
+
+                if existing_store is not None and not existing_store.is_empty:
+                    existing_store.remove_documents(chunk_ids)
+
+                    if existing_store.is_empty:
+                        # Không còn tài liệu nào → invalidate hoàn toàn
+                        cache_manager.invalidate_user(user_id)
+                    else:
+                        # Còn tài liệu → lưu lại store đã prune
+                        cache_manager.save_user_bm25(user_id, existing_store)
+
+                    logger.info(
+                        f"BM25 index updated after deletion | "
+                        f"user_id={user_id}, removed={len(chunk_ids)} chunks"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"BM25 index update after deletion failed (non-critical) | "
+                    f"user_id={user_id}, error={e}"
+                )
 
         # Xóa record trong DB
         db.delete(doc)

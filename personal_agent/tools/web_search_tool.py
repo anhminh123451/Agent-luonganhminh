@@ -91,7 +91,7 @@ class WebSearchArgs(ToolArgsSchema):
         ),
     )
     max_results: int = Field(
-        default=3,
+        default=settings.MAX_RESULTS_WEBSEARCH,
         ge=1,
         le=10,
         description="Số kết quả tìm kiếm tối đa (1–10, mặc định ).",
@@ -262,7 +262,7 @@ class WebSearchTool(BaseTool):
     def _search_tavily(
         self,
         query: str,
-        max_results: int = 5,
+        max_results: int = settings.MAX_RESULTS_WEBSEARCH,
         time_range: str | None = None,
     ) -> dict[str, Any]:
         """
