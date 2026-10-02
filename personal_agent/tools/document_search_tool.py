@@ -49,6 +49,7 @@ from typing import ClassVar
 
 from pydantic import Field
 
+from core.config import settings
 from core.exceptions import ToolExecutionError
 from core.logger import get_logger
 
@@ -153,7 +154,7 @@ class DocumentSearchTool(BaseTool):
     )
     category: ClassVar[ToolCategory] = ToolCategory.RETRIEVAL
     args_schema: ClassVar[type[ToolArgsSchema]] = DocumentSearchArgs
-    version: ClassVar[str] = "2.0.0"  # Hybrid Search version
+    version: ClassVar[str] = "2.1.0"  # Hybrid Search + Groq Re-ranker
 
     # ─── Dependencies (inject khi khởi tạo) ───────────────────────────
 
@@ -161,6 +162,7 @@ class DocumentSearchTool(BaseTool):
         self,
         hybrid_retriever=None,
         vector_store=None,
+        reranker=None,
     ):
         """
         Khởi tạo DocumentSearchTool.
@@ -168,9 +170,11 @@ class DocumentSearchTool(BaseTool):
         Args:
             hybrid_retriever: HybridRetriever instance. Nếu None, tạo mới.
             vector_store: VectorStore instance (dùng để count docs).
+            reranker: GroqReranker instance. Nếu None, tạo mới (lazy).
         """
         self._hybrid_retriever = hybrid_retriever
         self._vector_store = vector_store
+        self._reranker = reranker
 
     def _get_hybrid_retriever(self):
         """Lazy init HybridRetriever — chỉ tạo khi cần."""
@@ -188,11 +192,22 @@ class DocumentSearchTool(BaseTool):
             logger.debug("DocumentSearchTool: VectorStore initialized (lazy)")
         return self._vector_store
 
+    def _get_reranker(self):
+        """Lazy init GroqReranker — chỉ tạo khi cần."""
+        if self._reranker is None:
+            from knowledge_base.groq_reranker import GroqReranker
+            self._reranker = GroqReranker()
+            logger.debug("DocumentSearchTool: GroqReranker initialized (lazy)")
+        return self._reranker
+
     # ─── Core logic ───────────────────────────────────────────────────
 
     def run(self, **kwargs) -> ToolResult:
         """
-        Thực thi Hybrid Search: Dense + BM25 + RRF Fusion.
+        Thực thi Hybrid Search + Groq Re-ranker:
+            1. Dense (ChromaDB) + Sparse (BM25) + RRF Fusion lấy candidate pool.
+            2. Groq Re-ranker (Llama 3.3 70B) chấm điểm độ liên quan (0-10) và lọc.
+            3. Format kết quả thành text context cho agent.
 
         Args:
             **kwargs: Arguments từ LLM + hệ thống.
@@ -201,7 +216,7 @@ class DocumentSearchTool(BaseTool):
                 - user_id (int, required): ID người dùng (hệ thống tiêm vào).
 
         Returns:
-            ToolResult với context chứa tài liệu liên quan.
+            ToolResult với context chứa tài liệu liên quan đã qua re-ranker.
         """
         # ── Step 1: Validate input ────────────────────────────────────
         args = self.validate_args(**kwargs)
@@ -215,7 +230,7 @@ class DocumentSearchTool(BaseTool):
             )
 
         logger.info(
-            f"Hybrid search: query='{args.query[:80]}', "
+            f"Document search: query='{args.query[:80]}', "
             f"n_results={args.n_results}, user_id={args.user_id}"
         )
 
@@ -243,13 +258,16 @@ class DocumentSearchTool(BaseTool):
                 },
             )
 
-        # ── Step 4: Hybrid Search (Dense + BM25 + RRF) ────────────────
+        # ── Step 4: Hybrid Search lấy Candidate Pool ──────────────────
         try:
             hybrid_retriever = self._get_hybrid_retriever()
+            # Lấy pool ứng viên rộng hơn (mặc định 10 chunks hoặc 2 * n_results)
+            # để Groq Re-ranker có đủ dữ liệu thẩm định và lọc
+            candidate_k = max(args.n_results * 2, settings.RERANKER_TOP_K_CANDIDATES)
             search_result = hybrid_retriever.search(
                 query=args.query,
                 user_id=args.user_id,
-                n_results=args.n_results,
+                n_results=candidate_k,
             )
         except Exception as e:
             raise ToolExecutionError(
@@ -262,7 +280,7 @@ class DocumentSearchTool(BaseTool):
                 },
             ) from e
 
-        # ── Step 5: Xử lý kết quả rỗng ──────────────────────────────
+        # ── Step 5: Xử lý kết quả rỗng từ Hybrid Search ─────────────
         if search_result.is_empty:
             logger.info(
                 f"Hybrid search: no relevant results for "
@@ -284,13 +302,56 @@ class DocumentSearchTool(BaseTool):
                 },
             )
 
-        # ── Step 6: Format kết quả thành text context ─────────────────
-        context = self._format_results(
+        # ── Step 6: Groq Re-ranking & Filtering ───────────────────────
+        reranker = self._get_reranker()
+        rerank_result = reranker.rerank(
             query=args.query,
             documents=search_result.documents,
             metadatas=search_result.metadatas,
             scores=search_result.rrf_scores,
-            mode=search_result.mode,
+            top_n=args.n_results,
+            min_score=settings.RERANKER_MIN_SCORE,
+        )
+
+        # Xử lý trường hợp bộ lọc loại bỏ toàn bộ chunk vì không liên quan (điểm < 5.0)
+        if rerank_result.is_empty:
+            logger.info(
+                f"Groq rerank: all {len(search_result.documents)} candidates filtered out "
+                f"(score < {settings.RERANKER_MIN_SCORE}) for query='{args.query[:50]}', "
+                f"user_id={args.user_id}"
+            )
+            return ToolResult(
+                context=(
+                    f"Không tìm thấy tài liệu nào đủ liên quan đến: '{args.query}'. "
+                    f"Hệ thống đã tra cứu được {len(search_result.documents)} đoạn tài liệu liên quan sơ bộ, "
+                    f"nhưng sau khi thẩm định ngữ cảnh chuyên sâu thì không có đoạn nào trả lời trực tiếp câu hỏi. "
+                    f"Hãy thử diễn đạt câu hỏi rõ ràng hơn hoặc bổ sung thêm từ khóa."
+                ),
+                source=self.name,
+                metadata={
+                    "query": args.query,
+                    "user_id": args.user_id,
+                    "n_results": 0,
+                    "total_user_docs": doc_count,
+                    "filtered_out_by_reranker": True,
+                    "candidates_count": len(search_result.documents),
+                    "rerank_latency_ms": rerank_result.latency_ms,
+                },
+            )
+
+        # ── Step 7: Format kết quả thành text context như ban đầu ────
+        mode_desc = (
+            f"{search_result.mode} + Groq Rerank ({settings.GROQ_RERANK_MODEL})"
+            if not rerank_result.fallback_used
+            else f"{search_result.mode} (RRF Fallback)"
+        )
+
+        context = self._format_results(
+            query=args.query,
+            documents=rerank_result.documents,
+            metadatas=rerank_result.metadatas,
+            scores=rerank_result.scores,
+            mode=mode_desc,
         )
 
         # Truncate nếu quá dài (bảo vệ context window của LLM)
@@ -301,15 +362,15 @@ class DocumentSearchTool(BaseTool):
             )
 
         logger.info(
-            f"Hybrid search: found {len(search_result.documents)} results "
-            f"for query='{args.query[:50]}', user_id={args.user_id} "
-            f"(mode={search_result.mode}, context_length={len(context)})"
+            f"Document search: returned {len(rerank_result.documents)} results "
+            f"(from {len(search_result.documents)} candidates) for query='{args.query[:50]}', "
+            f"user_id={args.user_id} (mode={mode_desc}, rerank_latency={rerank_result.latency_ms:.1f}ms)"
         )
 
         # Lấy danh sách source files duy nhất
         source_files = sorted(set(
             meta.get("source_file", "unknown")
-            for meta in search_result.metadatas
+            for meta in rerank_result.metadatas
             if meta
         ))
 
@@ -319,13 +380,16 @@ class DocumentSearchTool(BaseTool):
             metadata={
                 "query": args.query,
                 "user_id": args.user_id,
-                "n_results": len(search_result.documents),
+                "n_results": len(rerank_result.documents),
                 "total_user_docs": doc_count,
                 "source_files": source_files,
-                "search_mode": search_result.mode,
+                "search_mode": mode_desc,
+                "candidates_count": len(search_result.documents),
+                "rerank_scores": rerank_result.scores,
+                "rerank_latency_ms": rerank_result.latency_ms,
+                "rerank_fallback_used": rerank_result.fallback_used,
                 "dense_count": search_result.dense_count,
                 "sparse_count": search_result.sparse_count,
-                "rrf_scores": search_result.rrf_scores,
             },
         )
 
@@ -340,19 +404,19 @@ class DocumentSearchTool(BaseTool):
         mode: str = "hybrid",
     ) -> str:
         """
-        Format kết quả Hybrid Search thành text context cho agent.
+        Format kết quả Search thành text context cho agent.
 
         Output format:
-            Kết quả tìm kiếm tài liệu cho: "điều khoản bảo mật" (Hybrid Search)
+            Kết quả tìm kiếm tài liệu cho: "điều khoản bảo mật" (...)
 
-            === Tài liệu 1 (Nguồn: report.pdf, RRF Score: 0.0163) ===
+            === Tài liệu 1 (Nguồn: report.pdf, Chunk: 0, relevance=9.2/10) ===
             [Nội dung tài liệu ...]
 
         Args:
             query: Câu truy vấn gốc.
             documents: Danh sách nội dung document.
             metadatas: Danh sách metadata.
-            scores: RRF scores hoặc distances.
+            scores: Relevance scores hoặc RRF scores.
             mode: Chế độ search (để hiển thị).
 
         Returns:
@@ -378,7 +442,13 @@ class DocumentSearchTool(BaseTool):
             source_file = meta.get("source_file", "unknown") if meta else "unknown"
             chunk_index = meta.get("chunk_index", "?") if meta else "?"
 
-            score_label = f"score={score:.6f}" if score is not None else ""
+            if score is not None:
+                if score > 1.0:
+                    score_label = f"relevance={score:.1f}/10"
+                else:
+                    score_label = f"score={score:.4f}"
+            else:
+                score_label = ""
 
             header = (
                 f"=== Tài liệu {i + 1} "

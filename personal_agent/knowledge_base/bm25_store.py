@@ -32,6 +32,7 @@ import pickle
 import zlib
 from dataclasses import dataclass, field
 
+from core.config import settings
 from core.logger import get_logger
 
 logger = get_logger(__name__)
@@ -125,7 +126,7 @@ class BM25Store:
     def search(
         self,
         query_tokens: list[str],
-        top_k: int = 10,
+        top_k: int = settings.N_RESULT_RETRIEVEL,
     ) -> list[tuple[str, str, dict, float]]:
         """
         Tìm kiếm sparse BM25 trên corpus.

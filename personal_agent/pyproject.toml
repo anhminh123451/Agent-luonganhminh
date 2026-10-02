@@ -31,6 +31,7 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "cachetools>=7.2.0",
     "pyvi>=0.1.1",
+    "groq>=0.11.0",
 ]
 
 

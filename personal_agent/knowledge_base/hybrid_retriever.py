@@ -80,7 +80,7 @@ def reciprocal_rank_fusion(
     k: int = settings.HYBRID_RRF_K,
     dense_weight: float = settings.HYBRID_DENSE_WEIGHT,
     sparse_weight: float = settings.HYBRID_SPARSE_WEIGHT,
-    top_n: int = 5,
+    top_n: int = settings.N_RESULT_RRF,
 ) -> list[tuple[str, str, dict, float]]:
     """
     Reciprocal Rank Fusion — Hợp nhất kết quả Dense + Sparse.
@@ -205,7 +205,7 @@ class HybridRetriever:
         self,
         query: str,
         user_id: int,
-        n_results: int = 5,
+        n_results: int = settings.N_RESULT_RETRIEVEL,
     ) -> HybridSearchResult:
         """
         Thực hiện Hybrid Search: Dense + Sparse + RRF.
@@ -223,14 +223,12 @@ class HybridRetriever:
         Returns:
             HybridSearchResult chứa documents đã rerank.
         """
-        # Số kết quả lấy từ mỗi nguồn (gấp đôi n_results để RRF có đủ pool)
-        fetch_k = n_results * 2
-
+        
         # ── Dense Search (ChromaDB) ───────────────────────────────────
-        dense_results = self._dense_search(query, user_id, fetch_k)
+        dense_results = self._dense_search(query, user_id)
 
         # ── Sparse Search (BM25 via CacheManager) ────────────────────
-        sparse_results = self._sparse_search(query, user_id, fetch_k)
+        sparse_results = self._sparse_search(query, user_id)
 
         # ── Determine mode ────────────────────────────────────────────
         has_dense = len(dense_results) > 0
@@ -249,18 +247,14 @@ class HybridRetriever:
         if mode == "hybrid":
             fused = reciprocal_rank_fusion(
                 dense_results=dense_results,
-                sparse_results=sparse_results,
-                k=settings.HYBRID_RRF_K,
-                dense_weight=settings.HYBRID_DENSE_WEIGHT,
-                sparse_weight=settings.HYBRID_SPARSE_WEIGHT,
-                top_n=n_results,
+                sparse_results=sparse_results
             )
         elif mode == "dense_only":
             # Fallback: chỉ Dense
-            fused = dense_results[:n_results]
+            fused = dense_results[:settings.N_RESULT_RRF]
         else:
             # Chỉ Sparse
-            fused = sparse_results[:n_results]
+            fused = sparse_results[:settings.N_RESULT_RRF]
 
         # ── Build result ──────────────────────────────────────────────
         result = HybridSearchResult(
@@ -290,7 +284,6 @@ class HybridRetriever:
         self,
         query: str,
         user_id: int,
-        top_k: int,
     ) -> list[tuple[str, str, dict, float]]:
         """
         Dense search qua ChromaDB: embed query → similarity search.
@@ -309,7 +302,6 @@ class HybridRetriever:
             result = vector_store.query(
                 user_id=user_id,
                 query_embedding=query_embedding,
-                n_results=top_k,
             )
 
             if result.is_empty:
@@ -336,7 +328,6 @@ class HybridRetriever:
         self,
         query: str,
         user_id: int,
-        top_k: int,
     ) -> list[tuple[str, str, dict, float]]:
         """
         Sparse search qua BM25: tokenize query → BM25 score.
@@ -370,7 +361,6 @@ class HybridRetriever:
             # BM25 search
             results = bm25_store.search(
                 query_tokens=query_tokens,
-                top_k=top_k,
             )
 
             return results

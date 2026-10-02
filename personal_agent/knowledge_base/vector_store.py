@@ -296,7 +296,7 @@ class VectorStore:
         user_id: int,
         query_text: str | None = None,
         query_embedding: list[float] | None = None,
-        n_results: int = 5,
+        n_results: int = settings.N_RESULT_RETRIEVEL,
         where_filter: dict | None = None,
     ) -> QueryResult:
         """

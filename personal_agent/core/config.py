@@ -56,9 +56,20 @@ class Settings(BaseSettings):
     L1_CACHE_TTL: int = 1800             # 30 phút
 
     # ─── Hybrid Search Params ─────────────────────────────────────────
-    HYBRID_DENSE_WEIGHT: float = 0.5
-    HYBRID_SPARSE_WEIGHT: float = 0.5
+    HYBRID_DENSE_WEIGHT: float = 0.7
+    HYBRID_SPARSE_WEIGHT: float = 0.3
     HYBRID_RRF_K: int = 60
+
+    # ─── Groq Re-ranker Settings ─────────────────────────────────────
+    GROQ_API_KEY: str = ""
+    GROQ_RERANK_MODEL: str = "openai/gpt-oss-120b"
+    RERANKER_ENABLED: bool = True
+    RERANKER_TOP_K_CANDIDATES: int = 10
+    RERANKER_MIN_SCORE: float = 5.0
+    RERANKER_TIMEOUT_SECONDS: float = 5.0
+    N_RESULT_RERANK:int = 5
+    N_RESULT_RETRIEVEL:int = 20
+    N_RESULT_RRF:int = 10
 
     class Config:
         env_file = ".env"
