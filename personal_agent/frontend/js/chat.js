@@ -47,11 +47,15 @@ function appendMessage(role, content, observations = []) {
     const msgEl = document.createElement('div');
     msgEl.className = `message ${role}`;
 
+    const avatarLetter = role === 'user' 
+        ? ((window.currentUser && window.currentUser.username) ? window.currentUser.username.charAt(0).toUpperCase() : 'U')
+        : '';
+
     const avatar = role === 'user' 
-        ? `<div class="message-avatar">U</div>` 
-        : `<div class="message-avatar"><svg width="18" height="18" viewBox="0 0 48 48" fill="none"><rect width="48" height="48" rx="12" fill="currentColor"/><circle cx="24" cy="24" r="3" fill="#fff"/></svg></div>`;
+        ? `<div class="message-avatar">${avatarLetter}</div>` 
+        : `<div class="message-avatar agent-avatar">AI</div>`;
     
-    let contentHtml = role === 'agent' ? Utils.parseMarkdown(content) : Utils.parseMarkdown(content);
+    let contentHtml = Utils.parseMarkdown(content);
 
     // If agent has observations, append them as collapsible block
     let observationsHtml = '';
@@ -87,6 +91,9 @@ async function handleSendMessage(e) {
     const query = chatInput.value.trim();
     if (!query || isWaitingForResponse) return;
 
+    // Track if this is a brand new session (first message)
+    const isNewSession = !window.currentSessionId;
+
     // Reset input
     chatInput.value = '';
     chatInput.style.height = 'auto';
@@ -113,7 +120,19 @@ async function handleSendMessage(e) {
         if (response.session_id && response.session_id !== window.currentSessionId) {
             window.currentSessionId = response.session_id;
             sessionStorage.setItem('active_session', response.session_id);
-            // Refresh sessions list
+
+            // Save the first question as the session title in localStorage
+            if (typeof setSessionTitle === 'function') {
+                setSessionTitle(response.session_id, query);
+            }
+
+            // Update the header title
+            const chatTitle = document.getElementById('chat-title');
+            if (chatTitle) {
+                chatTitle.textContent = query.length > 50 ? query.substring(0, 50) + '…' : query;
+            }
+
+            // Refresh sessions list to show the new session with its title
             await loadSessions();
         }
 
@@ -158,11 +177,9 @@ function renderChatHistory(messages) {
         } else if (msg.role === 'observation') {
             pendingObservations.push(msg.content);
         } else if (msg.role === 'assistant') {
-            // Check if it's an ANSWER or just THOUGHT/ACTION
-            // We usually only show ANSWER in UI, but if it has content we show it
             if (msg.content) {
                 appendMessage('agent', msg.content, pendingObservations);
-                pendingObservations = []; // reset
+                pendingObservations = [];
             }
         }
     });

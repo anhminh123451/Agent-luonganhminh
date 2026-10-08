@@ -131,3 +131,88 @@ def delete_session(
     )
 
     return {"message": f"Session đã được xóa thành công."}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# GET /sessions/{session_key}/history — Lấy lịch sử tin nhắn của session
+# ═══════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/{session_key}/history",
+    summary="Lấy lịch sử tin nhắn",
+    description=(
+        "Lấy toàn bộ tin nhắn trong một session hội thoại.\n\n"
+        "**Yêu cầu:** Authorization: Bearer <access_token>"
+    ),
+    responses={
+        200: {"description": "Danh sách tin nhắn"},
+        401: {"description": "Token không hợp lệ"},
+        404: {"description": "Session không tồn tại hoặc không thuộc user"},
+    },
+)
+def get_session_history(
+    session_key: str,
+    current_user: CurrentUserDep,
+    db: Session = Depends(get_db),
+):
+    """Lấy lịch sử tin nhắn của một session từ LangGraph checkpointer.
+
+    Đọc state từ SqliteSaver checkpointer theo thread_id (= session_key),
+    trích xuất danh sách messages và trả về cho frontend.
+    """
+    user_id = current_user.user_id
+
+    # Verify session belongs to user
+    session = (
+        db.query(SessionModel)
+        .filter(
+            SessionModel.session_key == session_key,
+            SessionModel.user_id == user_id,
+        )
+        .first()
+    )
+
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session không tồn tại hoặc không thuộc về bạn.",
+        )
+
+    # Read messages from LangGraph checkpointer
+    try:
+        from agent.graph import get_graph
+
+        graph = get_graph()
+        config = {"configurable": {"thread_id": session_key}}
+        state = graph.get_state(config)
+
+        messages = []
+        if state and state.values and state.values.get("messages"):
+            for msg in state.values["messages"]:
+                role = msg.get("role", "")
+                content = msg.get("content", "")
+                # Skip system messages — they are internal prompts
+                if role == "system":
+                    continue
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        logger.info(
+            f"Session history loaded | session_key={session_key[:8]}... | "
+            f"messages={len(messages)} | user_id={user_id}"
+        )
+
+        return {
+            "session_key": session_key,
+            "messages": messages,
+        }
+
+    except Exception as e:
+        logger.error(
+            f"Failed to load session history | "
+            f"session_key={session_key[:8]}... | error={e}"
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Không thể tải lịch sử tin nhắn.",
+        )

@@ -104,7 +104,7 @@ function renderDocumentsList() {
             <div class="empty-state">
                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-quaternary)" stroke-width="1"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <p>Chưa có tài liệu nào</p>
-                <p class="empty-state-hint">Upload tài liệu để AI Agent có thể phân tích</p>
+                <p class="empty-hint">Upload tài liệu để AI Agent có thể phân tích</p>
             </div>
         `;
         return;

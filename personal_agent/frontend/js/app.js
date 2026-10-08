@@ -124,6 +124,21 @@ async function initApp() {
             if (welcomeState) welcomeState.style.display = 'none';
             if (msgContainer) msgContainer.style.display = 'flex';
             if (chatTitle) chatTitle.textContent = 'Cuộc trò chuyện';
+
+            // Load chat history for the restored session
+            try {
+                const data = await API.sessions.getHistory(savedSessionId);
+                if (data.messages && data.messages.length > 0 && typeof renderChatHistory === 'function') {
+                    renderChatHistory(data.messages);
+                    // Update title from session title storage
+                    const savedTitle = typeof getSessionTitle === 'function' ? getSessionTitle(savedSessionId) : null;
+                    if (savedTitle && chatTitle) {
+                        chatTitle.textContent = savedTitle.length > 50 ? savedTitle.substring(0, 50) + '…' : savedTitle;
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to restore chat history:', e);
+            }
         } else {
             window.currentSessionId = null;
             if (welcomeState) welcomeState.style.display = 'flex';

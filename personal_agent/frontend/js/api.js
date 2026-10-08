@@ -160,6 +160,12 @@ const API = {
             return res.json();
         },
 
+        async getHistory(sessionKey) {
+            const res = await API.fetchWithAuth(`/sessions/${sessionKey}/history`);
+            if (!res.ok) throw new Error('Failed to load session history');
+            return res.json();
+        },
+
         async delete(sessionKey) {
             const res = await API.fetchWithAuth(`/sessions/${sessionKey}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed to delete session');
