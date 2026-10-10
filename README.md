@@ -11,7 +11,9 @@ Dự án này là một **website giúp người dùng tìm nhanh các thông ti
 
 ## 🔄 Flow hoạt động
 
-> Chèn sơ đồ Mermaid (hoặc ảnh `flow.png`) tại đây.
+<img width="3423" height="930" alt="flow2" src="https://github.com/user-attachments/assets/a8354e2c-2358-44e3-8504-5d9bbd80041a" />
+
+
 
 1. Người dùng gửi câu hỏi, Agent nhận và quyết định nguồn tìm kiếm.
 2. **Tài liệu cá nhân**: Hybrid Search lấy 20 tài liệu → RRF giữ lại top 10 → Reranker đánh giá lại độ liên quan.
@@ -23,7 +25,7 @@ Dự án này là một **website giúp người dùng tìm nhanh các thông ti
 | Nhóm | Công nghệ |
 |------|-----------|
 | Ngôn ngữ | Python |
-| Framework | FastAPI, LangGraph |
+| Framework | FastAPI, LangGraph, Pydantic |
 | Cơ sở dữ liệu | PostgreSQL (Supabase), Redis, ChromaDB |
 | Triển khai | Docker, Render |
 
