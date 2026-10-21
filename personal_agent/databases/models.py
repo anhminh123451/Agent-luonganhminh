@@ -26,6 +26,9 @@ class Users(Base):
     documents: Mapped[list["Documents"]]=relationship(back_populates="user",cascade="all, delete-orphan")
     refresh_tokens: Mapped[list["RefreshToken"]]=relationship(back_populates="user",cascade="all, delete-orphan")
     sessions: Mapped[list["Session"]]=relationship(back_populates="user",cascade="all, delete-orphan")
+    google_oauth_token: Mapped[Optional["GoogleOAuthToken"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
 
 
 
@@ -70,4 +73,29 @@ class Session(Base):
     )
     
     user:Mapped["Users"] = relationship(back_populates="sessions")
+
+
+
+class GoogleOAuthToken(Base):
+    __tablename__ = "google_oauth_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.user_id"), unique=True, index=True
+    )
+    google_access_token: Mapped[str] = mapped_column(Text)
+    google_refresh_token: Mapped[str] = mapped_column(Text)
+    token_expiry: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    scopes: Mapped[Optional[str]] = mapped_column(Text)  # JSON list scopes
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now()
+    )
+
+    user: Mapped["Users"] = relationship(back_populates="google_oauth_token")
     

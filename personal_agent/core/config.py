@@ -71,6 +71,14 @@ class Settings(BaseSettings):
     N_RESULT_RETRIEVEL:int = 20
     N_RESULT_RRF:int = 10
 
+    # ─── Google OAuth2 ────────────────────────────────────────────────
+    GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_CLIENT_SECRET: str = ""
+    GOOGLE_REDIRECT_URI: str = ""
+    GOOGLE_SCOPES: str = "https://www.googleapis.com/auth/gmail.readonly,https://www.googleapis.com/auth/gmail.compose"
+    # ─── Google MCP Server ───────────────────────────────────────────
+    GOOGLE_MCP_GMAIL_URL: str = "https://gmailmcp.googleapis.com/mcp/v1"
+
     class Config:
         env_file = ".env"
 
