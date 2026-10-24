@@ -432,6 +432,55 @@ class ToolRegistry:
     # ─── Function declarations (cho LLM system prompt) ────────────────
 
     @classmethod
+    def get_openai_tools_schema(
+        cls,
+        profile_name: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Export tools theo OpenAI function calling format.
+        Dùng để truyền vào tham số `tools=` của DeepSeek API.
+
+        Format output:
+        [
+            {
+                "type": "function",
+                "function": {
+                    "name": "document_search",
+                    "description": "...",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {...},
+                        "required": [...]
+                    }
+                }
+            },
+            ...
+        ]
+        """
+        _register_default_tools()
+
+        if profile_name is not None:
+            tools = cls.get_tools_for_profile(profile_name)
+        else:
+            tools = list(cls._registry.values())
+
+        schemas = []
+        for tool in tools:
+            schemas.append({
+                "type": "function",
+                "function": tool.to_function_declaration(),
+            })
+
+        # Nạp sẵn Gmail tool schemas
+        try:
+            from tools.gmail_mcp_tools import GMAIL_TOOL_SCHEMAS
+            schemas.extend(GMAIL_TOOL_SCHEMAS)
+        except Exception as e:
+            logger.warning(f"Failed to load GMAIL_TOOL_SCHEMAS: {e}")
+
+        return schemas
+
+    @classmethod
     def get_function_declarations(
         cls,
         profile_name: str | None = None,

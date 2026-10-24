@@ -716,6 +716,24 @@ input, textarea {
     color: var(--color-text-primary);
 }
 
+.google-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--color-text-quaternary);
+    display: inline-block;
+    transition: all var(--transition-fast);
+}
+
+.google-status-dot.connected {
+    background: var(--color-accent);
+    box-shadow: 0 0 6px var(--color-accent-glow);
+}
+
+#google-header-btn.connected {
+    color: var(--color-text-primary);
+}
+
 /* ═══════════════════════════════════════════════════════════
    CHAT AREA
    ═══════════════════════════════════════════════════════════ */

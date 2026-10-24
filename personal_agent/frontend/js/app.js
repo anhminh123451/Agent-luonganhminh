@@ -150,6 +150,9 @@ async function initApp() {
         if (typeof loadSessions === 'function') {
             await loadSessions();
         }
+
+        // Check Google connection status
+        await checkGoogleStatus();
         
         // Show main app
         switchPage('main-app');
@@ -160,6 +163,147 @@ async function initApp() {
         switchPage('auth-page');
     }
 }
+
+// ─── Google OAuth Management (Popup Mechanism) ───
+let isGoogleConnected = false;
+
+async function checkGoogleStatus() {
+    try {
+        const data = await API.google.getStatus();
+        updateGoogleStatusUI(Boolean(data && data.connected));
+    } catch (e) {
+        console.error('Failed to check Google connection status:', e);
+        updateGoogleStatusUI(false);
+    }
+}
+
+function updateGoogleStatusUI(connected) {
+    isGoogleConnected = connected;
+
+    // Header Button
+    const headerBtn = document.getElementById('google-header-btn');
+    const headerDot = document.getElementById('google-header-dot');
+    const headerLabel = document.getElementById('google-header-label');
+
+    if (headerBtn) {
+        headerBtn.title = connected 
+            ? 'Tài khoản Google: Đã kết nối (Nhấn để ngắt kết nối)' 
+            : 'Tài khoản Google: Chưa kết nối (Nhấn để kết nối)';
+        if (connected) {
+            headerBtn.classList.add('connected');
+        } else {
+            headerBtn.classList.remove('connected');
+        }
+    }
+
+    if (headerDot) {
+        if (connected) {
+            headerDot.classList.add('connected');
+        } else {
+            headerDot.classList.remove('connected');
+        }
+    }
+
+    if (headerLabel) {
+        headerLabel.textContent = connected ? 'Google (Đã nối)' : 'Google';
+    }
+
+    // Menu Item
+    const menuLabel = document.getElementById('google-menu-label');
+    const menuBtn = document.getElementById('google-menu-btn');
+    if (menuLabel) {
+        menuLabel.textContent = connected ? 'Ngắt kết nối Google' : 'Kết nối Google';
+    }
+    if (menuBtn) {
+        if (connected) {
+            menuBtn.classList.add('danger');
+        } else {
+            menuBtn.classList.remove('danger');
+        }
+    }
+}
+
+async function toggleGoogleAuth() {
+    // Close user menu if open
+    const menu = document.getElementById('user-menu');
+    if (menu) menu.style.display = 'none';
+
+    if (isGoogleConnected) {
+        Utils.confirm(
+            'Bạn có chắc chắn muốn ngắt kết nối tài khoản Google không? Sau khi ngắt kết nối, trợ lý sẽ không thể đọc hoặc gửi email Gmail.',
+            async () => {
+                try {
+                    await API.google.disconnect();
+                    updateGoogleStatusUI(false);
+                    Utils.showToast('Đã ngắt kết nối tài khoản Google.', 'info');
+                } catch (err) {
+                    Utils.showToast(err.message || 'Lỗi khi ngắt kết nối', 'error');
+                }
+            }
+        );
+    } else {
+        await connectGoogleWithPopup();
+    }
+}
+
+async function connectGoogleWithPopup() {
+    try {
+        Utils.showToast('Đang tạo liên kết Google...', 'info', 1500);
+        const data = await API.google.getAuthUrl();
+        const authUrl = data.authorization_url || data.url;
+
+        if (!authUrl) {
+            throw new Error('Không nhận được URL xác thực từ hệ thống.');
+        }
+
+        // Kích thước và căn giữa popup
+        const width = 500;
+        const height = 650;
+        const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+        const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+
+        const popup = window.open(
+            authUrl,
+            'GoogleAuthPopup',
+            `width=${width},height=${height},left=${left},top=${top},status=no,menubar=no,toolbar=no,scrollbars=yes`
+        );
+
+        if (!popup || popup.closed || typeof popup.closed === 'undefined') {
+            Utils.showToast('Trình duyệt đã chặn popup. Vui lòng bật quyền cho phép popup để kết nối Google.', 'warning', 5000);
+            return;
+        }
+
+        popup.focus();
+    } catch (err) {
+        console.error('Lỗi khi mở popup Google OAuth:', err);
+        Utils.showToast(err.message || 'Không thể mở cửa sổ kết nối Google', 'error');
+    }
+}
+
+// Lắng nghe tín hiệu postMessage từ Popup Window khi hoàn tất OAuth
+window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'GOOGLE_AUTH_SUCCESS') {
+        updateGoogleStatusUI(true);
+        Utils.showToast('Kết nối Google thành công! Các công cụ Gmail đã sẵn sàng.', 'success', 4000);
+        
+        // Tự động gửi lại câu hỏi trước đó nếu có
+        if (window._pendingAuthQuery) {
+            const retryQuery = window._pendingAuthQuery;
+            window._pendingAuthQuery = null;
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                chatInput.value = retryQuery;
+                chatInput.dispatchEvent(new Event('input'));
+                handleSendMessage();
+            }
+        }
+    } else if (event.data.type === 'GOOGLE_AUTH_ERROR') {
+        const errorMsg = event.data.error || 'Xác thực không thành công';
+        Utils.showToast(`Kết nối Google thất bại: ${errorMsg}`, 'error', 4000);
+    }
+});
 
 // Global click to close dropdowns
 document.addEventListener('click', (e) => {

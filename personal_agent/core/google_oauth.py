@@ -5,8 +5,14 @@ Module này cung cấp các hàm core để:
   1. Tạo authorization URL → redirect user tới Google consent screen
   2. Exchange authorization code → access_token + refresh_token
   3. Lưu/cập nhật tokens vào DB (bảng google_oauth_tokens)
-  4. Load credentials từ DB + tự động refresh nếu expired
-  5. Kiểm tra trạng thái kết nối Google của user
+  4. Cache access_token trên Redis (Cache-Aside pattern)
+  5. Load credentials từ Redis/DB + tự động refresh nếu expired
+  6. Kiểm tra trạng thái kết nối Google của user
+
+Cache Strategy:
+  - Redis chỉ lưu access_token + scopes (TTL = 50 phút).
+  - refresh_token chỉ lưu trong DB (bảo mật).
+  - Nếu Redis lỗi → graceful fallback xuống DB, không crash.
 
 Sử dụng:
     from core.google_oauth import (
@@ -19,6 +25,7 @@ Sử dụng:
 Tham khảo:
     - databases/models.py: GoogleOAuthToken model
     - core/config.py: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ...
+    - core/redis.py: Redis client singleton
     - api/routes/google_oauth.py: FastAPI routes gọi các hàm này
 """
 
@@ -45,6 +52,11 @@ logger = get_logger(__name__)
 GOOGLE_AUTH_URI = "https://accounts.google.com/o/oauth2/auth"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
+# Redis cache: TTL 50 phút (access_token Google sống 60 phút,
+# đặt 50 phút để cache hết hạn trước token → buộc refresh sớm)
+REDIS_TOKEN_TTL = 50 * 60  # 3000 seconds
+REDIS_KEY_PREFIX = "google_oauth"
+
 
 def _get_scopes() -> list[str]:
     """Parse GOOGLE_SCOPES setting thành list."""
@@ -62,6 +74,92 @@ def _build_client_config() -> dict:
             "redirect_uris": [settings.GOOGLE_REDIRECT_URI],
         }
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# REDIS CACHE HELPERS
+# ═══════════════════════════════════════════════════════════════════════
+
+def _redis_cache_key(user_id: int) -> str:
+    """Tạo Redis key cho Google OAuth token cache."""
+    return f"{REDIS_KEY_PREFIX}:{user_id}"
+
+
+def _cache_token_to_redis(user_id: int, access_token: str, scopes: list[str]) -> None:
+    """
+    Lưu access_token + scopes vào Redis cache.
+
+    Graceful: Nếu Redis lỗi → log warning và bỏ qua (không crash).
+    Chỉ cache access_token và scopes, KHÔNG cache refresh_token.
+    """
+    try:
+        from core.redis import get_redis_client
+        redis_client = get_redis_client()
+
+        cache_data = json.dumps({
+            "access_token": access_token,
+            "scopes": scopes,
+        })
+
+        redis_client.setex(
+            name=_redis_cache_key(user_id),
+            time=REDIS_TOKEN_TTL,
+            value=cache_data,
+        )
+
+        logger.debug(f"Cached Google token to Redis | user_id={user_id}")
+    except Exception as e:
+        logger.warning(
+            f"Failed to cache Google token to Redis (non-fatal) | "
+            f"user_id={user_id} | error={e}"
+        )
+
+
+def _load_token_from_redis(user_id: int) -> Optional[dict]:
+    """
+    Đọc access_token + scopes từ Redis cache.
+
+    Returns:
+        Dict {"access_token": str, "scopes": list} nếu cache hit,
+        None nếu cache miss hoặc Redis lỗi.
+    """
+    try:
+        from core.redis import get_redis_client
+        redis_client = get_redis_client()
+
+        raw = redis_client.get(_redis_cache_key(user_id))
+        if raw is None:
+            return None
+
+        # decode_responses=False → raw là bytes
+        data = json.loads(raw if isinstance(raw, str) else raw.decode("utf-8"))
+        logger.debug(f"Redis cache HIT for Google token | user_id={user_id}")
+        return data
+    except Exception as e:
+        logger.warning(
+            f"Failed to read Google token from Redis (falling back to DB) | "
+            f"user_id={user_id} | error={e}"
+        )
+        return None
+
+
+def _invalidate_redis_cache(user_id: int) -> None:
+    """
+    Xóa Google token cache khỏi Redis.
+
+    Graceful: Nếu Redis lỗi → log warning và bỏ qua.
+    """
+    try:
+        from core.redis import get_redis_client
+        redis_client = get_redis_client()
+
+        redis_client.delete(_redis_cache_key(user_id))
+        logger.debug(f"Invalidated Redis cache for Google token | user_id={user_id}")
+    except Exception as e:
+        logger.warning(
+            f"Failed to invalidate Redis cache (non-fatal) | "
+            f"user_id={user_id} | error={e}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -166,11 +264,16 @@ def exchange_code_for_tokens(
 
     db.commit()
     db.refresh(db_token)
+
+    # Cache access_token vào Redis (không cache refresh_token)
+    scopes_list = list(credentials.scopes or [])
+    _cache_token_to_redis(user_id, credentials.token, scopes_list)
+
     return db_token
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# LOAD CREDENTIALS — Lấy credentials từ DB, auto-refresh nếu expired
+# LOAD CREDENTIALS — Redis first, fallback DB, auto-refresh nếu expired
 # ═══════════════════════════════════════════════════════════════════════
 
 def get_user_google_credentials(
@@ -178,10 +281,13 @@ def get_user_google_credentials(
     db: Session,
 ) -> Optional[Credentials]:
     """
-    Load Google OAuth credentials từ DB cho user.
+    Load Google OAuth credentials cho user (Cache-Aside pattern).
 
-    Nếu access_token đã expired → tự động refresh qua refresh_token
-    và cập nhật DB.
+    Luồng:
+        1. Kiểm tra Redis cache → nếu HIT, trả về Credentials ngay.
+        2. Nếu MISS → truy vấn DB.
+        3. Nếu access_token đã expired → refresh qua refresh_token,
+           cập nhật cả DB lẫn Redis.
 
     Args:
         user_id: ID user.
@@ -191,6 +297,18 @@ def get_user_google_credentials(
         google.oauth2.credentials.Credentials nếu user đã kết nối,
         None nếu chưa.
     """
+    # ── Bước 1: Thử đọc từ Redis cache ────────────────────────────────
+    cached = _load_token_from_redis(user_id)
+    if cached:
+        return Credentials(
+            token=cached["access_token"],
+            token_uri=GOOGLE_TOKEN_URI,
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET,
+            scopes=cached.get("scopes") or _get_scopes(),
+        )
+
+    # ── Bước 2: Cache miss → truy vấn DB ──────────────────────────────
     db_token = (
         db.query(GoogleOAuthToken)
         .filter(GoogleOAuthToken.user_id == user_id)
@@ -210,7 +328,7 @@ def get_user_google_credentials(
         scopes=json.loads(db_token.scopes) if db_token.scopes else _get_scopes(),
     )
 
-    # Auto-refresh nếu expired
+    # ── Bước 3: Auto-refresh nếu expired ──────────────────────────────
     if credentials.expired and credentials.refresh_token:
         try:
             from google.auth.transport.requests import Request
@@ -227,6 +345,10 @@ def get_user_google_credentials(
                 f"Failed to refresh Google token | user_id={user_id} | error={e}"
             )
             return None
+
+    # ── Bước 4: Ghi lại vào Redis cache cho lần sau ───────────────────
+    scopes_list = list(credentials.scopes or [])
+    _cache_token_to_redis(user_id, credentials.token, scopes_list)
 
     return credentials
 
@@ -290,6 +412,9 @@ def revoke_user_google_tokens(user_id: int, db: Session) -> bool:
 
     db.delete(db_token)
     db.commit()
+
+    # Xóa cache Redis
+    _invalidate_redis_cache(user_id)
 
     logger.info(f"Revoked Google tokens | user_id={user_id}")
     return True

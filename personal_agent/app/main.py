@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from api.routes import auth, chat, document, health, sessions, evaluate
+from api.routes import auth, chat, document, health, sessions, evaluate, google_oauth
 from databases.database import engine, Base
 from tools import setup_tools
 from agent.profiles import setup_profiles
@@ -62,6 +62,11 @@ app.include_router(
 
 app.include_router(
     evaluate.router,
+    prefix="/api"
+)
+
+app.include_router(
+    google_oauth.router,
     prefix="/api"
 )
 # ── Static Files — serve frontend SPA ─────────────────────────────────

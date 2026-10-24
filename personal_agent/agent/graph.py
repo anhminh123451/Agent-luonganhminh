@@ -1,80 +1,18 @@
 """
-LangGraph Workflow cho Personal AI Agent — Module 5.
+LangGraph Workflow cho Personal AI Agent — Native Function Calling.
 
-Module này định nghĩa toàn bộ LangGraph StateGraph workflow,
-compile graph một lần (singleton pattern) và cung cấp factory
-function get_graph() để reuse trong suốt application lifecycle.
+Module này định nghĩa StateGraph workflow cho Native Function Calling loop,
+quản lý routing dựa trên pending_tool_calls và auth_required,
+đồng thời tích hợp conversation memory qua SqliteSaver.
 
-Kiến trúc: LangGraph StateGraph Workflow
-    - build_graph(): Xây dựng StateGraph với nodes và edges
-    - get_graph(): Factory function với caching (singleton)
-    - should_continue(): Router function quyết định flow
-    - get_checkpointer(): Factory function cho SqliteSaver (singleton)
-
-Graph Flow (ReAct Loop):
-    ┌─────────────────────────────────────────────────────────────┐
-    │                                                             │
-    │   START                                                     │
-    │     │                                                       │
-    │     ▼                                                       │
-    │   ┌──────────┐                                              │
-    │   │call_agent│ ← LLM suy luận (THOUGHT/ACTION/ANSWER)      │
-    │   └────┬─────┘                                              │
-    │        │                                                    │
-    │        ▼                                                    │
-    │   ┌───────────────┐                                         │
-    │   │should_continue│ ← Router: quyết định flow tiếp theo     │
-    │   └───┬───┬───┬───┘                                         │
-    │       │   │   │                                             │
-    │       │   │   └──► END (DONE / ERROR)                       │
-    │       │   │                                                 │
-    │       │   └──────► call_agent (THOUGHT → tiếp tục loop)     │
-    │       │                                                     │
-    │       ▼                                                     │
-    │   ┌─────────┐                                               │
-    │   │call_tool│ ← Thực thi tool → trả OBSERVATION             │
-    │   └────┬────┘                                               │
-    │        │                                                    │
-    │        └──────────► call_agent (loop lại với observation)    │
-    │                                                             │
-    └─────────────────────────────────────────────────────────────┘
-
-Conditional Routing (should_continue):
-    - status == TOOL_CALLING  → "call_tool"    (cần gọi tool)
-    - status == RUNNING       → "call_agent"   (tiếp tục suy luận)
-    - status == DONE          → END            (có câu trả lời)
-    - status == ERROR         → END            (gặp lỗi)
-
-Persistent Conversation Memory (SqliteSaver):
-    - Mỗi session_id tương ứng với 1 thread_id trong checkpointer
-    - Graph tự lưu state vào SQLite sau mỗi invoke
-    - Khi invoke lại cùng thread_id → checkpointer nạp state cũ
-    - current_step được reset mỗi query mới để tránh vượt step limit
-
-Cách sử dụng:
-    from agent.graph import invoke_agent
-
-    # Lượt chat 1
-    result1 = invoke_agent(
-        query="Tên tôi là Minh",
-        session_id="session-001",
-    )
-    print(result1["final_answer"])
-
-    # Lượt chat 2 — agent nhớ ngữ cảnh
-    result2 = invoke_agent(
-        query="Tên tôi là gì?",
-        session_id="session-001",
-    )
-    print(result2["final_answer"])  # → "Minh"
+Flow:
+    START → call_agent → should_continue() ──┬──> call_tool → should_continue_tool() ──> call_agent
+                                            │                                        └──> END (AUTH)
+                                            ├──> call_agent (loop lại nếu cần)
+                                            └──> END (DONE / ERROR / AUTH_REQUIRED)
 
 Tham khảo:
-    - Plan.md Module 5: LangGraph Workflow
-    - agent/state.py: AgentState TypedDict, AgentStatus
-    - agent/runner.py: AgentRunner.call_agent()
-    - agent/tool_executor.py: ToolExecutor.call_tool()
-    - LangGraph documentation: StateGraph, add_conditional_edges
-    - LangGraph checkpoint: SqliteSaver for persistent memory
+    - implementation_plan2.md: Phase 7 & Phase 10
 """
 
 from __future__ import annotations
@@ -104,143 +42,79 @@ _graph_lock = threading.Lock()
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# ROUTER — should_continue() quyết định flow tiếp theo
+# ROUTERS — Routing logic cho conditional edges
 # ═══════════════════════════════════════════════════════════════════════
 
 def should_continue(state: AgentState) -> str:
     """
-    Router function cho LangGraph conditional edges.
-
-    Kiểm tra trạng thái agent sau mỗi bước call_agent
-    để quyết định flow tiếp theo trong graph.
-
-    Routing logic:
-        ┌─────────────────────┬──────────────────────────────┐
-        │ Status              │ Route đến                    │
-        ├─────────────────────┼──────────────────────────────┤
-        │ TOOL_CALLING        │ "call_tool" (thực thi tool)  │
-        │ RUNNING             │ "call_agent" (tiếp tục loop) │
-        │ DONE                │ END (kết thúc, có answer)    │
-        │ ERROR               │ END (kết thúc, có lỗi)      │
-        │ (unknown)           │ END (fallback an toàn)       │
-        └─────────────────────┴──────────────────────────────┘
-
-    Args:
-        state: AgentState hiện tại từ LangGraph.
-
-    Returns:
-        Tên node tiếp theo ("call_agent", "call_tool") hoặc END.
+    Router sau node call_agent.
     """
-    status = state.get("status", "")
-    current_step = state.get("current_step", 0)
-    session_preview = state.get("session_id", "unknown")[:8]
-
-    logger.debug(
-        f"[Step {current_step}] should_continue | "
-        f"status='{status}' | session={session_preview}..."
-    )
-
-    # ── TOOL_CALLING → cần gọi tool ──────────────────────────────────
-    if status == AgentStatus.TOOL_CALLING.value:
-        tool_name = state.get("tool_name", "")
-        logger.info(
-            f"[Step {current_step}] Routing → call_tool | "
-            f"tool='{tool_name}' | session={session_preview}..."
-        )
+    # 1. Có tool calls chờ thực thi?
+    if state.get("pending_tool_calls"):
         return "call_tool"
 
-    # ── RUNNING → tiếp tục suy luận (THOUGHT) ────────────────────────
-    if status == AgentStatus.RUNNING.value:
-        logger.info(
-            f"[Step {current_step}] Routing → call_agent | "
-            f"continuing loop | session={session_preview}..."
-        )
-        return "call_agent"
-
-    # ── DONE → đã có câu trả lời ─────────────────────────────────────
-    if status == AgentStatus.DONE.value:
-        answer_preview = state.get("final_answer", "")[:50]
-        logger.info(
-            f"[Step {current_step}] Routing → END (DONE) | "
-            f"answer='{answer_preview}...' | session={session_preview}..."
-        )
+    # 2. Kiểm tra lỗi không recover được
+    if state.get("error"):
         return END
 
-    # ── ERROR → gặp lỗi không recover được ───────────────────────────
-    if status == AgentStatus.ERROR.value:
-        error = state.get("error", "unknown error")
-        logger.warning(
-            f"[Step {current_step}] Routing → END (ERROR) | "
-            f"error='{error}' | session={session_preview}..."
-        )
+    # 3. Yêu cầu xác thực Google OAuth
+    # if state.get("auth_required"):
+    #     return END
+
+    # 4. Đạt giới hạn ngân sách bước
+    if state.get("current_step", 0) >= state.get("max_steps", settings.MAX_AGENT_STEPS):
         return END
 
+    # 5. Nếu message cuối cùng là kết quả tool → cần LLM phân tích
+    # messages = state.get("messages", [])
+    # if messages:
+    #     last_msg = messages[-1]
+    #     if last_msg.get("role") in ("tool", "observation"):
+    #         return "call_agent"
 
-    # ── Fallback — status không nhận diện được ────────────────────────
-    logger.warning(
-        f"[Step {current_step}] Unknown status '{status}' — "
-        f"routing to END (fallback) | session={session_preview}..."
-    )
+    # 6. Mặc định: LLM đã hoàn tất câu trả lời
     return END
+
+
+def should_continue_tool(state: AgentState) -> str:
+    """
+    Router sau node call_tool.
+    """
+    # Nếu tool executor phát hiện cần OAuth auth → dừng ngay tại END
+    if state.get("auth_required"):
+        return END
+
+    # Có kết quả tool → loop lại call_agent để LLM đọc kết quả
+    return "call_agent"
 
 
 # ═══════════════════════════════════════════════════════════════════════
 # GRAPH BUILDER — Xây dựng StateGraph
 # ═══════════════════════════════════════════════════════════════════════
 
-def build_graph() -> StateGraph:
+def build_graph() -> Any:
     """
-    Xây dựng LangGraph StateGraph cho ReAct agent loop.
-
-    Tạo graph với:
-        - 2 nodes: call_agent, call_tool
-        - 1 entry point: call_agent
-        - 1 conditional edge: call_agent → should_continue → routing
-        - 1 direct edge: call_tool → call_agent (loop lại)
-
-    Graph structure:
-        START → call_agent → should_continue() → call_tool → call_agent
-                                               → call_agent (THOUGHT)
-                                                → END (DONE/ERROR)
-
-    Returns:
-        Compiled StateGraph sẵn sàng invoke.
-
-    Raises:
-        GraphExecutionError: Khi build graph thất bại.
-
-    Lưu ý:
-        - AgentRunner và ToolExecutor được khởi tạo bên trong function
-          để tránh import circular và đảm bảo lazy initialization.
-        - Graph chỉ nên build 1 lần và cache (dùng get_graph()).
+    Xây dựng LangGraph StateGraph cho Native Function Calling loop.
     """
     try:
-        # Lazy import để tránh circular dependency
         from agent.runner import AgentRunner
         from agent.tool_executor import ToolExecutor
 
-        # ── Khởi tạo node handlers ────────────────────────────────────
         runner = AgentRunner()
         executor = ToolExecutor()
 
-        logger.info("Building LangGraph StateGraph...")
+        logger.info("Building LangGraph StateGraph for native function calling...")
 
-        # ── Tạo StateGraph ────────────────────────────────────────────
         graph = StateGraph(AgentState)
 
         # ── Thêm nodes ───────────────────────────────────────────────
         graph.add_node("call_agent", runner.call_agent)
         graph.add_node("call_tool", executor.call_tool)
 
-        logger.debug("Added nodes: call_agent, call_tool")
-
-        # ── Set entry point ──────────────────────────────────────────
+        # ── Entry point ──────────────────────────────────────────────
         graph.set_entry_point("call_agent")
 
-        logger.debug("Set entry point: call_agent")
-
-        # ── Thêm conditional edges từ call_agent ─────────────────────
-        # Sau call_agent, should_continue() quyết định đi đâu tiếp
+        # ── Conditional edges từ call_agent ──────────────────────────
         graph.add_conditional_edges(
             source="call_agent",
             path=should_continue,
@@ -251,18 +125,17 @@ def build_graph() -> StateGraph:
             },
         )
 
-        logger.debug(
-            "Added conditional edges: call_agent → "
-            "{call_tool, call_agent, END}"
+        # ── Conditional edges từ call_tool ───────────────────────────
+        graph.add_conditional_edges(
+            source="call_tool",
+            path=should_continue_tool,
+            path_map={
+                "call_agent": "call_agent",
+                END: END,
+            },
         )
 
-        # ── Thêm direct edge từ call_tool về call_agent ──────────────
-        # Sau call_tool (observation), luôn quay lại call_agent
-        graph.add_edge("call_tool", "call_agent")
-
-        logger.debug("Added edge: call_tool → call_agent")
-
-        # ── Khởi tạo checkpointer ─────────────────────────────────────
+        # ── Checkpointer ─────────────────────────────────────────────
         import sqlite3
 
         db_path = settings.CHECKPOINT_DB_PATH
@@ -273,21 +146,9 @@ def build_graph() -> StateGraph:
         conn = sqlite3.connect(db_path, check_same_thread=False)
         checkpointer = SqliteSaver(conn)
 
-        logger.info(
-            f"SqliteSaver checkpointer initialized | "
-            f"db_path='{db_path}'"
-        )
-
-        # ── Compile graph VỚI checkpointer ────────────────────────────
         compiled = graph.compile(checkpointer=checkpointer)
 
-        logger.info(
-            "LangGraph StateGraph compiled successfully | "
-            "nodes=['call_agent', 'call_tool'] | "
-            "entry_point='call_agent' | "
-            "checkpointer=SqliteSaver"
-        )
-
+        logger.info("LangGraph StateGraph compiled successfully")
         return compiled
 
     except Exception as e:
@@ -298,91 +159,44 @@ def build_graph() -> StateGraph:
         ) from e
 
 
-# ═══════════════════════════════════════════════════════════════════════
-# FACTORY FUNCTION — get_graph() với caching (singleton)
-# ═══════════════════════════════════════════════════════════════════════
-
 def get_graph():
-    """
-    Factory function trả về compiled graph (singleton pattern).
-
-    Graph chỉ được compile 1 lần duy nhất, sau đó cache lại
-    để reuse cho tất cả requests. Thread-safe với threading.Lock.
-
-    Tại sao cần singleton:
-        - Compile graph tốn thời gian (khởi tạo AgentRunner, ToolExecutor)
-        - Graph là stateless — state được truyền qua invoke()
-        - Tránh overhead tạo LLM client mỗi request
-
-    Returns:
-        Compiled StateGraph instance.
-
-    Raises:
-        GraphExecutionError: Khi compile graph thất bại.
-
-    Ví dụ:
-        # Trong FastAPI lifespan hoặc bất kỳ đâu
-        graph = get_graph()
-        result = graph.invoke(initial_state)
-
-        # Gọi lại → trả cached instance (không compile lại)
-        graph2 = get_graph()
-        assert graph is graph2  # True — cùng instance
-
-    Thread-safety:
-        Nhiều requests đồng thời gọi get_graph() lần đầu:
-        - Chỉ 1 thread compile graph (acquire lock)
-        - Các threads khác đợi → nhận cached instance
-    """
+    """Singleton getter cho compiled graph."""
     global _compiled_graph
 
     if _compiled_graph is not None:
         return _compiled_graph
 
     with _graph_lock:
-        # Double-check locking pattern
-        # Thread khác có thể đã compile trong khi thread này đợi lock
         if _compiled_graph is not None:
             return _compiled_graph
 
-        logger.info("First call to get_graph() — compiling graph...")
+        logger.info("Compiling graph singleton...")
         _compiled_graph = build_graph()
-        logger.info("Graph cached successfully (singleton)")
-
         return _compiled_graph
 
 
 def reset_graph() -> None:
-    """
-    Reset cached graph (dùng cho testing hoặc hot-reload).
-
-    Xóa cached instance để lần gọi get_graph() tiếp theo
-    sẽ compile graph mới.
-
-    Hữu ích khi:
-        - Unit testing: mỗi test cần graph mới
-        - Hot-reload: khi thay đổi tool configuration
-        - Debugging: force re-initialization
-
-    Ví dụ:
-        # Trong test fixture
-        @pytest.fixture(autouse=True)
-        def reset():
-            reset_graph()
-            yield
-            reset_graph()
-    """
+    """Reset cached graph (dùng khi reload hoặc test)."""
     global _compiled_graph
-
     with _graph_lock:
         _compiled_graph = None
-        logger.info("Graph cache cleared — will recompile on next get_graph()")
-
-
+        logger.info("Graph cache cleared")
 
 
 # ═══════════════════════════════════════════════════════════════════════
-# INVOKE HELPER — Convenience function để chạy agent (có checkpointer)
+# HELPER: EXTRACT LAST ASSISTANT CONTENT
+# ═══════════════════════════════════════════════════════════════════════
+
+def _extract_last_assistant_content(messages: list[dict[str, Any]]) -> str:
+    """Trích xuất content của assistant message cuối cùng."""
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant" and msg.get("content"):
+            return msg["content"]
+    return ""
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# INVOKE HELPER — Convenience function để chạy agent
 # ═══════════════════════════════════════════════════════════════════════
 
 def invoke_agent(
@@ -393,71 +207,22 @@ def invoke_agent(
     max_steps: int | None = None,
 ) -> dict[str, Any]:
     """
-    Convenience function để chạy agent — hỗ trợ duy trì hội thoại.
-
-    Kiểm tra xem thread_id (= session_id) đã có state trong
-    checkpointer chưa:
-        - Nếu ĐÃ CÓ: Tiếp tục hội thoại — chỉ gửi query mới
-          + reset current_step để mỗi query có budget bước riêng.
-          + user_id đã được lưu từ lần đầu, không cần truyền lại.
-        - Nếu CHƯA CÓ: Tạo initial_state() rồi invoke như mới.
-
-    Graph tự động lưu state vào SQLite sau mỗi invoke nhờ
-    SqliteSaver checkpointer.
-
-    Args:
-        query: Câu hỏi từ user.
-        user_id: ID người dùng (bắt buộc, dùng cho multi-tenant filtering).
-        agent_profile: Tên agent profile (mặc định "personal_agent").
-        session_id: ID session (optional, tự tạo nếu None).
-                    Dùng làm thread_id cho checkpointer.
-        max_steps: Giới hạn bước (optional, dùng settings nếu None).
-
-    Returns:
-        Dict chứa final AgentState sau khi graph chạy xong.
-        Các key quan trọng:
-            - final_answer: Câu trả lời cuối cùng
-            - tool_observations: Danh sách observations
-            - current_step: Số bước đã thực hiện
-            - status: Trạng thái cuối (done/error)
-            - error: Thông tin lỗi (nếu có)
-
-    Raises:
-        ValueError: Khi query hoặc user_id rỗng.
-        GraphExecutionError: Khi graph execution thất bại.
-
-    Ví dụ:
-        # Lượt 1
-        result1 = invoke_agent(
-            "Tên tôi là Minh",
-            user_id="user_123",
-            session_id="session-001",
-        )
-        # Lượt 2 — agent nhớ tên
-        result2 = invoke_agent(
-            "Tên tôi là gì?",
-            user_id="user_123",
-            session_id="session-001",
-        )
+    Convenience function để chạy agent, hỗ trợ duy trì session và
+    nhận diện auth suspension.
     """
     import uuid
-    from agent.state import AgentStatus, create_initial_state
+    from agent.state import create_initial_state
 
-    # Resolve session_id
     resolved_session_id = session_id or str(uuid.uuid4())
     resolved_max_steps = (
         max_steps if max_steps is not None else settings.MAX_AGENT_STEPS
     )
 
-    # Lấy compiled graph (có checkpointer)
     graph = get_graph()
-
-    # Config cho checkpointer — thread_id = session_id
     config = {"configurable": {"thread_id": resolved_session_id}}
-
     session_preview = resolved_session_id[:8]
 
-    # ── Kiểm tra state đã tồn tại trên thread_id này chưa ────────
+    # Kiểm tra state đã tồn tại trên thread_id này chưa
     try:
         existing_state = graph.get_state(config)
         has_existing_state = bool(
@@ -469,39 +234,32 @@ def invoke_agent(
         has_existing_state = False
 
     if has_existing_state:
-        # ── TIẾP TỤC HỘI THOẠI ──────────────────────────────────
-        # State cũ đã có trong checkpointer → chỉ gửi query mới
-        # + reset các field loop control cho query mới
         logger.info(
             f"Continuing conversation | "
             f"thread_id={session_preview}... | "
             f"query='{query[:50]}...'"
         )
-
         input_state = {
             "query": query.strip(),
-            # Reset loop control cho query mới
+            "user_id": user_id,
             "current_step": 0,
             "max_steps": resolved_max_steps,
             "status": AgentStatus.RUNNING.value,
-            "current_action": "",
-            # Reset tool state
-            "tool_name": "",
-            "tool_args": {},
-            # Reset output
+            "pending_tool_calls": [],
+            "tool_results": [],
+            "auth_required": False,
+            "auth_url": "",
+            "auth_service": "",
             "final_answer": "",
             "error": "",
         }
     else:
-        # ── HỘI THOẠI MỚI ────────────────────────────────────────
-        # Chưa có state → tạo initial state đầy đủ
         logger.info(
             f"Starting new conversation | "
             f"thread_id={session_preview}... | "
             f"profile={agent_profile} | "
             f"query='{query[:50]}...'"
         )
-
         input_state = create_initial_state(
             query=query,
             user_id=user_id,
@@ -510,25 +268,41 @@ def invoke_agent(
             max_steps=resolved_max_steps,
         )
 
-    # ── Invoke graph với config (checkpointer tự lưu state) ──────
     try:
         result = graph.invoke(input_state, config)
 
-        logger.info(
-            f"Agent completed | "
-            f"status={result.get('status')} | "
-            f"steps={result.get('current_step')} | "
-            f"has_answer={bool(result.get('final_answer'))} | "
-            f"continued={has_existing_state} | "
-            f"thread_id={session_preview}..."
-        )
+        # Kiểm tra trường hợp cần Auth (Google OAuth)
+        if result.get("auth_required"):
+            logger.info(
+                f"Agent suspended for auth | service={result.get('auth_service')} | "
+                f"thread_id={session_preview}..."
+            )
+            return {
+                "status": "auth_required",
+                "service": result.get("auth_service", "google"),
+                "authorize_url": result.get("auth_url"),
+                "message": "Vui lòng kết nối tài khoản Google để sử dụng tính năng Gmail.",
+                "session_id": result.get("session_id", resolved_session_id),
+                "steps": result.get("current_step", 0),
+                "final_answer": "Vui lòng kết nối tài khoản Google để sử dụng tính năng Gmail.",
+            }
 
-        return result
+        # Trả về kết quả bình thường
+        answer = result.get("final_answer") or _extract_last_assistant_content(result.get("messages", []))
+        return {
+            "status": result.get("status", "done"),
+            "answer": answer,
+            "final_answer": answer,
+            "session_id": result.get("session_id", resolved_session_id),
+            "steps": result.get("current_step", 0),
+            "current_step": result.get("current_step", 0),
+            "error": result.get("error", ""),
+            "messages": result.get("messages", []),
+        }
 
     except Exception as e:
         logger.error(
-            f"Agent invocation failed: {e} | "
-            f"thread_id={session_preview}...",
+            f"Agent invocation failed: {e} | thread_id={session_preview}...",
             exc_info=True,
         )
         raise GraphExecutionError(

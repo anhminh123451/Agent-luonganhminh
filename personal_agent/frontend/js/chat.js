@@ -136,6 +136,25 @@ async function handleSendMessage(e) {
             await loadSessions();
         }
 
+        // If auth_required, open OAuth popup and prompt user
+        if (response.status === 'auth_required') {
+            window._pendingAuthQuery = query;
+            const authUrl = response.authorize_url;
+            appendMessage('agent', `${response.answer}\n\n👉 [**Bấm vào đây để cấp quyền kết nối Google**](${authUrl})`);
+            
+            if (authUrl) {
+                const width = 500, height = 650;
+                const left = (window.innerWidth - width) / 2 + window.screenX;
+                const top = (window.innerHeight - height) / 2 + window.screenY;
+                window.open(
+                    authUrl,
+                    'google_oauth_popup',
+                    `width=${width},height=${height},top=${top},left=${left},scrollbars=yes,status=no`
+                );
+            }
+            return;
+        }
+
         // Append agent response
         appendMessage('agent', response.answer, response.tool_observations);
 

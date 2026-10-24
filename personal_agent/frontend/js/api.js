@@ -224,5 +224,35 @@ const API = {
             if (!res.ok) throw new Error('Failed to delete document');
             return res.json();
         }
+    },
+
+    google: {
+        async getAuthUrl() {
+            const res = await API.fetchWithAuth('/google/authorize');
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'Không thể lấy URL xác thực Google');
+            }
+            return res.json();
+        },
+
+        async getStatus() {
+            try {
+                const res = await API.fetchWithAuth('/google/status');
+                if (!res.ok) return { connected: false };
+                return res.json();
+            } catch {
+                return { connected: false };
+            }
+        },
+
+        async disconnect() {
+            const res = await API.fetchWithAuth('/google/disconnect', { method: 'DELETE' });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || 'Không thể ngắt kết nối Google');
+            }
+            return res.json();
+        }
     }
 };

@@ -51,11 +51,13 @@ class AgentStatusResponse(str, Enum):
     Trạng thái agent trả về cho client.
 
     Mapping từ AgentStatus (agent/state.py):
-        - done    → agent đã trả lời thành công
-        - error   → agent gặp lỗi
+        - done          → agent đã trả lời thành công
+        - error         → agent gặp lỗi
+        - auth_required → agent cần xác thực Google OAuth
     """
     DONE = "done"
     ERROR = "error"
+    AUTH_REQUIRED = "auth_required"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -210,6 +212,18 @@ class ChatResponse(BaseModel):
         examples=[None],
     )
 
+    service: str | None = Field(
+        default=None,
+        description="Dịch vụ yêu cầu xác thực nếu status=auth_required (ví dụ: 'google')",
+        examples=["google"],
+    )
+
+    authorize_url: str | None = Field(
+        default=None,
+        description="URL để mở popup xác thực OAuth nếu status=auth_required",
+        examples=["https://accounts.google.com/o/oauth2/v2/auth?..."],
+    )
+
     model_config = {
         "json_schema_extra": {
             "examples": [
@@ -231,44 +245,34 @@ class ChatResponse(BaseModel):
     def from_agent_result(result: dict, session_id: str) -> "ChatResponse":
         """
         Factory method chuyển đổi AgentState dict → ChatResponse.
-
-        Mapping AgentState fields → ChatResponse fields:
-            final_answer     → answer
-            status           → status (chỉ lấy done/error)
-            session_id       → session_id
-            current_step     → num_steps
-            tool_observations → tool_observations
-            error            → error
-
-        Args:
-            result: Dict kết quả từ invoke_agent() (AgentState).
-            session_id: Session ID đã resolved.
-
-        Returns:
-            ChatResponse instance.
         """
-        # Xử lý status — map sang AgentStatusResponse
         raw_status = result.get("status", "done")
         try:
             status = AgentStatusResponse(raw_status)
         except ValueError:
-            # Status không xác định (running, tool_calling, ...) → mặc định error
             status = AgentStatusResponse.ERROR
 
-        # Xử lý answer — nếu error mà không có answer, dùng error message
-        answer = result.get("final_answer", "")
+        answer = result.get("final_answer") or result.get("answer", "")
         error = result.get("error", "") or None
 
-        if not answer and status == AgentStatusResponse.ERROR:
-            answer = error or "Agent gặp lỗi không xác định."
+        if not answer:
+            if status == AgentStatusResponse.AUTH_REQUIRED:
+                answer = result.get("message", "Vui lòng kết nối tài khoản Google để sử dụng tính năng Gmail.")
+            elif status == AgentStatusResponse.ERROR:
+                answer = error or "Agent gặp lỗi không xác định."
+
+        service_val = result.get("service") or result.get("auth_service")
+        auth_url_val = result.get("authorize_url") or result.get("auth_url")
 
         return ChatResponse(
             answer=answer,
             status=status,
             session_id=session_id,
-            num_steps=result.get("current_step", 0),
-            tool_observations=result.get("tool_observations", []),
+            num_steps=result.get("steps", 0) or result.get("current_step", 0),
+            tool_observations=[],
             error=error,
+            service=service_val if status == AgentStatusResponse.AUTH_REQUIRED else None,
+            authorize_url=auth_url_val if status == AgentStatusResponse.AUTH_REQUIRED else None,
         )
 
 
